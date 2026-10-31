@@ -287,11 +287,25 @@ Two things worth knowing before you run it:
   path mounts that Autopilot blocks. Use `GKE_MODE=standard`, or switch to the Datadog Operator or
   Helm chart, which have an Autopilot-compatible mode. The script warns you rather than failing
   thirty minutes in.
+- **On Podman, set `CONTAINER_CLI=podman`** in `carto.env`, or put `scripts/podman-shim` on your
+  PATH. The script builds with `docker` by default and otherwise stops at `docker: command not
+  found`.
+- **It bills while it exists, not while you demo.** Three `e2-standard-4` nodes plus a load
+  balancer is roughly US$10–15 a day in most regions. Tear it down when you are done — see
+  [Teardown](#teardown).
 
 Find the storefront once the load balancer has an address:
 
 ```bash
 kubectl -n carto get ingress carto -w
+```
+
+Then point the Datadog assets at it. The deep links in the monitors and dashboards come from
+`WEB_URL`, and on GKE that address does not exist until the load balancer is up, so it cannot
+be set beforehand — `gke-deploy.sh` prints this reminder with the real IP filled in:
+
+```bash
+WEB_URL=http://<load-balancer-ip> ./carto assets
 ```
 
 ### Layout

@@ -155,8 +155,11 @@ kubectl -n "$NS" create secret generic carto-secrets \
   --from-literal=POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-webapppw}" \
   --from-literal=GUARDRAIL_AGENT_TOKEN="${GUARDRAIL_AGENT_TOKEN:-carto-agent-attestation}" \
   --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+# DD_SITE and the cluster name are the two values the tracked ConfigMap cannot
+# know. DD_CLUSTER_NAME ships as "carto-demo"; left alone, Datadog groups this
+# cluster under a name that does not match the GKE cluster in the console.
 kubectl -n "$NS" patch configmap carto-config --type merge \
-  -p "{\"data\":{\"DD_SITE\":\"${DD_SITE}\"}}" >/dev/null
+  -p "{\"data\":{\"DD_SITE\":\"${DD_SITE}\",\"DD_CLUSTER_NAME\":\"${CLUSTER}\"}}" >/dev/null
 kubectl -n "$NS" rollout restart daemonset/datadog-agent >/dev/null 2>&1 || true
 ok "secrets in place"
 
@@ -172,6 +175,15 @@ echo
 IP="$(kubectl -n "$NS" get ingress carto -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)"
 if [[ -n "$IP" ]]; then
   ok "storefront: http://$IP/"
+  # Datadog monitors and dashboards deep-link to WEB_URL. On GKE that is the
+  # load balancer, which has no address until now -- so it cannot be set in
+  # carto.env ahead of time. Say what to do, rather than leaving every "open
+  # the tracking page" link in Datadog pointing at somebody's laptop.
+  if [[ "${WEB_URL:-}" != "http://$IP" ]]; then
+    warn "WEB_URL in carto.env is '${WEB_URL:-unset}', not http://$IP"
+    warn "Datadog monitors and dashboards will deep-link there instead."
+    warn "to point them at this cluster:  WEB_URL=http://$IP ./carto assets"
+  fi
 else
   warn "the GCE load balancer has no IP yet; it takes a few minutes on first apply"
   warn "watch it with: kubectl -n $NS get ingress carto -w"

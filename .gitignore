@@ -21,8 +21,11 @@ __pycache__/
 .DS_Store
 docker-compose.rum-dns.yaml
 
-# Written by `make git-metadata` — derived state (commit sha for Source Code
-# Integration). Compose auto-loads it; it is not a secrets file.
+# Compose auto-loads .env if present. Used here only for Source Code
+# Integration (DD_GIT_REPOSITORY_URL / DD_GIT_COMMIT_SHA), which point at
+# whoever's fork this is, so they are not committed. Nothing generates this
+# file — write it yourself if you want the feature, or set the two variables
+# in carto.env instead.
 .env
 
 # Generated nginx snippet pinning the RUM intake IP (make rum-unblock).

@@ -38,7 +38,7 @@ x-python-obs: &python-obs
   # repo and commit, which is what turns a stack frame in Error Tracking into
   # a clickable line of source. Needs the Datadog GitHub integration and the
   # repo pushed somewhere it can see; until then the tags are harmless.
-  DD_GIT_REPOSITORY_URL: ${DD_GIT_REPOSITORY_URL:-github.com/j-d-repo/carto-demo}
+  DD_GIT_REPOSITORY_URL: ${DD_GIT_REPOSITORY_URL:-}
   DD_GIT_COMMIT_SHA: ${DD_GIT_COMMIT_SHA:-}
   # Remote-Configuration-driven APM capabilities. All three need
   # DD_REMOTE_CONFIGURATION_ENABLED on the Agent (it is on) AND an API key
@@ -54,7 +54,7 @@ x-python-obs: &python-obs
   POSTGRES_HOST: postgres
   POSTGRES_DB: carto
   POSTGRES_USER: webapp
-  POSTGRES_PASSWORD: webapppw
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-webapppw}
 
 services:
   postgres:
@@ -67,7 +67,7 @@ services:
     - -c
     - config_file=/etc/postgresql/postgresql.conf
     environment:
-      POSTGRES_PASSWORD: webapppw
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-webapppw}
       POSTGRES_DB: carto
       POSTGRES_USER: webapp
     volumes:
@@ -340,7 +340,7 @@ services:
       DD_IAST_ENABLED: 'true'
       DD_API_SECURITY_ENABLED: 'true'
       DD_APPSEC_AUTO_USER_INSTRUMENTATION_MODE: identification
-      DD_GIT_REPOSITORY_URL: ${DD_GIT_REPOSITORY_URL:-github.com/j-d-repo/carto-demo}
+      DD_GIT_REPOSITORY_URL: ${DD_GIT_REPOSITORY_URL:-}
       DD_GIT_COMMIT_SHA: ${DD_GIT_COMMIT_SHA:-}
       DD_DYNAMIC_INSTRUMENTATION_ENABLED: 'true'
       DD_EXCEPTION_REPLAY_ENABLED: 'true'
@@ -350,7 +350,7 @@ services:
       POSTGRES_HOST: postgres
       POSTGRES_DB: carto
       POSTGRES_USER: webapp
-      POSTGRES_PASSWORD: webapppw
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-webapppw}
       CATALOGUE_URL: http://catalogue:8080
       CHECKOUT_URL: http://checkout:8080
       FULFILMENT_URL: http://fulfilment:8080
@@ -389,7 +389,7 @@ services:
         VITE_DD_ENV: ${DD_ENV:-dev}
         VITE_DD_VERSION: 0.1.0
         VITE_DD_GIT_COMMIT_SHA: ${DD_GIT_COMMIT_SHA:-}
-        VITE_DD_GIT_REPOSITORY_URL: ${DD_GIT_REPOSITORY_URL:-github.com/j-d-repo/carto-demo}
+        VITE_DD_GIT_REPOSITORY_URL: ${DD_GIT_REPOSITORY_URL:-}
     container_name: carto-web
     hostname: web
     restart: unless-stopped

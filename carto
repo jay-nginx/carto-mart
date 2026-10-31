@@ -21,7 +21,15 @@ if [[ "${CARTO_RUNTIME:-auto}" != "docker" ]] && ! docker info >/dev/null 2>&1 \
    && [[ -x /opt/podman/bin/podman ]] \
    && /opt/podman/bin/podman machine inspect >/dev/null 2>&1; then
   . ./scripts/podman-env.sh
-  export COMPOSE_FILE="compose.yaml:docker-compose.override.yaml:docker-compose.rum-dns.yaml:docker-compose.podman.yaml"
+  # Only compose.yaml and the podman override are tracked in git. The other two
+  # are generated locally (`make rum`, `make rum-unblock`) and gitignored, so a
+  # fresh clone does not have them -- naming one that is absent makes compose
+  # exit 1 before doing anything. Build the list from what actually exists, the
+  # way the Makefile and scripts/stack.sh already do.
+  CF="compose.yaml"
+  [[ -f docker-compose.override.yaml ]] && CF="$CF:docker-compose.override.yaml"
+  [[ -f docker-compose.rum-dns.yaml  ]] && CF="$CF:docker-compose.rum-dns.yaml"
+  export COMPOSE_FILE="$CF:docker-compose.podman.yaml"
 fi
 BFF="${BFF:-http://localhost:8091}"
 WEB="${WEB:-${WEB_URL:-http://localhost:5175}}"
