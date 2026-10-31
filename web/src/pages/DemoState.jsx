@@ -117,7 +117,7 @@ export default function DemoState({ customer }) {
         </table>
         <p className="muted" style={{ fontSize: 12, marginBottom: 0 }}>
           Engaging a scenario here changes real service state, exactly as the run sheet buttons and{' '}
-          <code>./km break …</code> do — there is one control plane, so these three surfaces can
+          <code>./carto break …</code> do — there is one control plane, so these three surfaces can
           never disagree.
         </p>
       </div>

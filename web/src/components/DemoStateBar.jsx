@@ -46,7 +46,7 @@ export default function DemoStateBar({ customer }) {
   useEffect(() => {
     refresh();
     // Poll rather than subscribe: the failures are engaged from a different
-    // surface (the run sheet, curl, ./km) so this page has no way to know a
+    // surface (the run sheet, curl, ./carto) so this page has no way to know a
     // change happened. Five seconds is fast enough that the strip is correct
     // by the time a presenter finishes saying the sentence.
     const t = setInterval(refresh, POLL_MS);

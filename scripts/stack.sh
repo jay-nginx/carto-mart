@@ -2,10 +2,10 @@
 # ===========================================================================
 # stack.sh — graceful stop / start / restart for the Carto harness.
 #
-#   ./km stop      | ./scripts/stack.sh stop      quiesce and stop, keep everything
-#   ./km start     | ./scripts/stack.sh start     bring it back and wait until usable
-#   ./km cycle     | ./scripts/stack.sh restart   stop then start
-#   ./km status    | ./scripts/stack.sh status    what is running, and is it serving
+#   ./carto stop      | ./scripts/stack.sh stop      quiesce and stop, keep everything
+#   ./carto start     | ./scripts/stack.sh start     bring it back and wait until usable
+#   ./carto cycle     | ./scripts/stack.sh restart   stop then start
+#   ./carto status    | ./scripts/stack.sh status    what is running, and is it serving
 #
 # WHY THIS EXISTS RATHER THAN `docker compose stop`
 # =================================================
@@ -191,7 +191,7 @@ do_stop() {
   [[ "$left" == "0" ]] && ok "all carto containers stopped; images, volumes and data kept" \
                        || warn "$left container(s) still running: $(docker ps --filter 'name=carto-' --format '{{.Names}}' | tr '\n' ' ')"
   echo
-  echo "  bring it back with:  ./km start"
+  echo "  bring it back with:  ./carto start"
 }
 
 wait_http() {  # wait_http <url> <seconds> <label>
@@ -264,7 +264,7 @@ do_start() {
 try: print(json.load(sys.stdin).get("count",0))
 except Exception: print(0)' 2>/dev/null || echo 0)
   [[ "${n:-0}" -ge 1 ]] && ok "products load through the browser path ($n returned)" \
-                        || bad "NO PRODUCTS through $WEB/api/products — run ./km doctor"
+                        || bad "NO PRODUCTS through $WEB/api/products — run ./carto doctor"
   curl -s --max-time 10 "$BFF/api/demo/status" 2>/dev/null | python3 -c '
 import json,sys
 try:
@@ -279,7 +279,7 @@ except Exception:
   echo "  demo state      $WEB/demo-state"
   echo "  tracking        $WEB/track?q=CT-CUST-9001"
   echo
-  echo "  full check:     ./km doctor"
+  echo "  full check:     ./carto doctor"
 }
 
 do_status() {

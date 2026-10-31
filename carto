@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# km — one-word control surface for the Carto demo harness. Thin wrapper over
+# carto — one-word control surface for the Carto demo harness. Thin wrapper over
 # the Makefile so a presenter never has to remember target names mid-demo.
 #
-#   ./km up | stop | start | cycle | status | doctor | smoke | validate
-#   ./km down | ps | logs | rum | assets | reset
-#   ./km break new-range | payment | peak | stall | errors | raj
-#   ./km fix   new-range | payment | peak | stall | raj
-#   ./km raj                     Raj Patel's ids, last transaction, DD links
-#   ./km track <CRTX-… | CRT-… | CT-CUST-… | bob>
-#   ./km open  storefront | demo | arch | track | telemetry
+#   ./carto up | stop | start | cycle | status | doctor | smoke | validate
+#   ./carto down | ps | logs | rum | assets | reset
+#   ./carto break new-range | payment | peak | stall | errors | raj
+#   ./carto fix   new-range | payment | peak | stall | raj
+#   ./carto raj                     Raj Patel's ids, last transaction, DD links
+#   ./carto track <CRTX-… | CRT-… | CT-CUST-… | bob>
+#   ./carto open  storefront | demo | arch | track | telemetry
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -65,7 +65,7 @@ case "${1:-help}" in
   raj|user)
     exec make demo-user CUSTOMER="${2:-CT-CUST-9001}" ;;
   track)
-    [[ -n "${2:-}" ]] || { echo "usage: ./km track <txn_id|order_id|customer_id|username>"; exit 2; }
+    [[ -n "${2:-}" ]] || { echo "usage: ./carto track <txn_id|order_id|customer_id|username>"; exit 2; }
     curl -s "$BFF/api/track?q=$2" | python3 -m json.tool ;;
   recent)
     curl -s "$BFF/api/track/recent" | python3 -c '

@@ -65,7 +65,7 @@ case "$state" in
     # state where every [Carto] synthetic silently stops executing.
     bad "carto-synthetics-pl is CRASH-LOOPING — synthetic tests are NOT running"
     if ! docker run --rm --platform linux/amd64 alpine:3.20 true >/dev/null 2>&1; then
-      bad "  cause: amd64 emulation unavailable. Fix: ./km start (repairs it), or"
+      bad "  cause: amd64 emulation unavailable. Fix: ./carto start (repairs it), or"
       echo "         docker run --privileged --rm tonistiigi/binfmt --install amd64"
     fi ;;
   *)

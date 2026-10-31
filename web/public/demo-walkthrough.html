@@ -264,26 +264,26 @@
     <div class="callout">
       <h3>Warm the stack</h3>
       <pre><code>cd carto-demo
-./km up          # first time: build + start everything
-./km start       # resume a stopped stack, in order, and verify it serves
-./km stop        # graceful shutdown — clears failures, keeps data
-./km cycle       # stop + start, for a reboot between prep and the room
-./km doctor      # creds, health, signals, the browser path
-./km assets      # dashboards, monitors, SLOs, synthetics
-./km reset       # clean baseline, Raj released from every failure</code></pre>
-      <p><strong>Use <code>./km stop</code> rather than closing the lid on a running stack.</strong>
+./carto up          # first time: build + start everything
+./carto start       # resume a stopped stack, in order, and verify it serves
+./carto stop        # graceful shutdown — clears failures, keeps data
+./carto cycle       # stop + start, for a reboot between prep and the room
+./carto doctor      # creds, health, signals, the browser path
+./carto assets      # dashboards, monitors, SLOs, synthetics
+./carto reset       # clean baseline, Raj released from every failure</code></pre>
+      <p><strong>Use <code>./carto stop</code> rather than closing the lid on a running stack.</strong>
       It stops the writers before Postgres (so there is no WAL replay on the next boot) and the
       Datadog Agent after the apps (so the last minute of telemetry actually ships).
-      <code>./km start</code> waits for each layer's health check and then proves the browser path
+      <code>./carto start</code> waits for each layer's health check and then proves the browser path
       serves products.</p>
-      <p><code>./km validate</code> proves a triggered failure reaches RUM and a clean run does not —
+      <p><code>./carto validate</code> proves a triggered failure reaches RUM and a clean run does not —
       nine real browser journeys asserted against the Datadog API. Run it the night before.</p>
       <p><strong>On an M-series Mac, check the synthetics worker after any Docker restart.</strong>
       Datadog's private-location worker is amd64-only, and the emulation handler does not survive a
       Docker Desktop restart — when it is missing, every <code>[Carto]</code> synthetic silently
-      stops running. <code>./km start</code> repairs it automatically and <code>./km doctor</code>
+      stops running. <code>./carto start</code> repairs it automatically and <code>./carto doctor</code>
       calls it out.</p>
-      <p><strong>Run <code>./km doctor</code> after any laptop sleep.</strong> Every service restarts
+      <p><strong>Run <code>./carto doctor</code> after any laptop sleep.</strong> Every service restarts
       on crash and health-checks its own database connection, so a suspend/resume repairs itself —
       doctor is the 15-second confirmation.</p>
     </div>
@@ -300,7 +300,7 @@
         <li>This page.</li>
       </ol>
       <p class="muted" style="font-size:12.5px">Do one throwaway order as Raj during setup, then
-      <code>./km reset</code>. It warms every cache and leaves a resolved transaction on /track as a
+      <code>./carto reset</code>. It warms every cache and leaves a resolved transaction on /track as a
       spare example.</p>
     </div>
   </div>
@@ -805,8 +805,8 @@
     </table>
   </div>
   <p class="muted" style="font-size:13.5px">
-    Terminal equivalents: <code>./km break raj</code> · <code>./km fix raj</code> ·
-    <code>./km raj</code> · <code>./km track CT-CUST-9001</code> · <code>./km reset</code>.
+    Terminal equivalents: <code>./carto break raj</code> · <code>./carto fix raj</code> ·
+    <code>./carto raj</code> · <code>./carto track CT-CUST-9001</code> · <code>./carto reset</code>.
   </p>
 </section>
 
@@ -1005,7 +1005,7 @@ async function refreshState() {
   } catch (err) {
     el('state-head').textContent = 'Cannot reach the storefront API';
     el('state-api').textContent = API_BASE || location.origin;
-    setNote(`${err.message}. Is the stack up? Try: ./km doctor`, true);
+    setNote(`${err.message}. Is the stack up? Try: ./carto doctor`, true);
     el('state').className = 'statebar statebar--fail';
   }
 }

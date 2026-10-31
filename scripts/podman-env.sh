@@ -1,5 +1,5 @@
 # Source this to point the harness at Podman instead of Docker Desktop:
-#   . ./scripts/podman-env.sh && ./km up
+#   . ./scripts/podman-env.sh && ./carto up
 #
 # Sets three things:
 #   1. the shim dir first on PATH, so `docker compose` resolves (see the shim)
