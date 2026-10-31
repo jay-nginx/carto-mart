@@ -1,0 +1,23 @@
+{
+  "name": "[Carto] Orders stalled past the fulfilment seam",
+  "type": "metric alert",
+  "query": "min(last_10m):avg:carto.fulfilment.orders_stalled{env:prd} > 0",
+  "message": "{{#is_alert}}\n**{{value}} paid orders have had no fulfilment progress for more than 3 minutes.**\n\nThe storefront, payments and the order service are all healthy \u2014 the orders are simply not moving. The warehouse management system and the carrier produce no Datadog telemetry, so there is no failed span and no 5xx anywhere to alert on. This monitor watches the AGE OF THE LAST HOP in the Carto transaction ledger instead, which is only possible because every hop is stamped with a Carto-minted `txn_id`.\n\nFind the affected transactions: ${WEB_URL}/track \u2014 or in Datadog, `@observability:blackbox` in Logs.\n{{/is_alert}}",
+  "tags": [
+    "failure_mode:fulfilment_stall",
+    "observability:blackbox",
+    "harness:carto",
+    "team:carto-digital",
+    "purpose:carto-demo",
+    "business_unit:carto-digital"
+  ],
+  "priority": 2,
+  "options": {
+    "notify_no_data": false,
+    "renotify_interval": 0,
+    "include_tags": true,
+    "thresholds": {
+      "critical": 0
+    }
+  }
+}

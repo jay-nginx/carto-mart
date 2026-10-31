@@ -1,0 +1,13 @@
+# directory — file/directory counts, sizes, ages. Useful for log-volume
+# alarms and "is something writing here?" sanity checks. Sample monitors
+# /var/log; SEs adjust as needed.
+
+init_config:
+
+instances:
+  - directory: /var/log
+    name: var_log
+    pattern: "*.log"
+    recursive: true
+    countonly: false
+    filegauges: false

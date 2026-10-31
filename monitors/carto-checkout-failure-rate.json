@@ -1,0 +1,23 @@
+{
+  "name": "[Carto] Checkout failure rate above 5%",
+  "type": "query alert",
+  "query": "sum(last_10m):sum:carto.checkout.order{env:prd,!result:paid}.as_count() / sum:carto.checkout.order{env:prd}.as_count() * 100 > 5",
+  "message": "{{#is_alert}}\n**{{value}}% of checkouts are not completing.**\n\nGroup APM by `carto.fulfilment_method`, `carto.state` and `flag.express_checkout_v2` before assuming it is everywhere \u2014 the failure modes staged in this harness (card gateway degraded for one fulfilment method, the regressed express-checkout cohort) are both invisible in the aggregate and obvious the moment the data is split by tag.\n{{/is_alert}}",
+  "tags": [
+    "failure_mode:checkout",
+    "harness:carto",
+    "team:carto-digital",
+    "purpose:carto-demo",
+    "business_unit:carto-digital"
+  ],
+  "priority": 2,
+  "options": {
+    "notify_no_data": false,
+    "renotify_interval": 0,
+    "include_tags": true,
+    "thresholds": {
+      "critical": 5,
+      "warning": 2
+    }
+  }
+}

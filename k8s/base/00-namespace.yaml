@@ -1,0 +1,12 @@
+# Everything the harness owns lives in one namespace, so `kubectl delete ns
+# carto` is a complete uninstall and nothing leaks into default.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: carto
+  labels:
+    app.kubernetes.io/part-of: carto-demo
+    # The Datadog Agent reads these for Unified Service Tagging; setting them
+    # on the namespace means a pod that forgets them still lands in the right
+    # service and environment.
+    tags.datadoghq.com/env: prd

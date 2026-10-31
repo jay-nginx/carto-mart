@@ -1,0 +1,28 @@
+{
+  "name": "[Carto] Checkout success rate",
+  "description": "Share of checkout attempts that result in a paid order. This is the SLO a GM recognises: it is denominated in customer intent, not in HTTP status codes. Counts every non-paid outcome against the budget, including the silent ones (out of stock at the moment of purchase, the regressed express-checkout cohort) that a 5xx-based SLI would miss.",
+  "type": "metric",
+  "query": {
+    "numerator": "sum:carto.checkout.order{env:prd,result:paid}.as_count()",
+    "denominator": "sum:carto.checkout.order{env:prd}.as_count()"
+  },
+  "thresholds": [
+    {
+      "timeframe": "7d",
+      "target": 99.0,
+      "warning": 99.5
+    },
+    {
+      "timeframe": "30d",
+      "target": 99.0,
+      "warning": 99.5
+    }
+  ],
+  "tags": [
+    "harness:carto",
+    "team:carto-digital",
+    "purpose:carto-demo",
+    "business_unit:carto-digital",
+    "slo:checkout"
+  ]
+}

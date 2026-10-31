@@ -1,0 +1,24 @@
+{
+  "name": "[Carto] AI guardrails disabled \u2014 actions running unevaluated",
+  "type": "log alert",
+  "query": "logs(\"service:carto-guardrails @guardrail_decision:bypassed\").index(\"*\").rollup(\"count\").last(\"10m\") > 0",
+  "priority": 1,
+  "tags": [
+    "harness:carto",
+    "team:carto-digital",
+    "purpose:carto-demo",
+    "business_unit:carto-digital",
+    "failure_mode:guardrail_bypass",
+    "surface:ai-governance"
+  ],
+  "message": "{{#is_alert}}\n**Agent actions are being permitted without being evaluated.**\n\n`GUARDRAIL_ENABLED` is false, so all six pillars are skipped and every action the agent attempts is allowed. {{value}} action(s) in the last 10 minutes.\n\nThe kill switch exists so the demo can show the same action succeeding unguarded and being refused guarded. Outside that, guardrails being off is itself the finding: re-enable it and review what ran while it was off, in `agent_actions`.\n\n- Logs: `service:carto-guardrails @guardrail_decision:bypassed`\n{{/is_alert}}\n{{#is_recovery}}\nGuardrails are enforcing again.\n{{/is_recovery}}",
+  "options": {
+    "thresholds": {
+      "critical": 0
+    },
+    "notify_no_data": false,
+    "renotify_interval": 30,
+    "include_tags": true,
+    "enable_logs_sample": true
+  }
+}

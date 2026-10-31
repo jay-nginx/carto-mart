@@ -1,0 +1,27 @@
+<svg id="cartoLogo" viewBox="0 0 150 50" xmlns="http://www.w3.org/2000/svg"
+     role="img" aria-label="Carto" width="150" height="50">
+  <title>Carto</title>
+  <!-- Original mark for the fictional Carto brand. Deliberately shares no
+       geometry, wordmark or colour with any real retailer, because this repo
+       is published publicly. Mark = a map pin whose void is a shopping bag:
+       "cartography" + "cart". -->
+  <defs>
+    <linearGradient id="cartoPin" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#17A683"/>
+      <stop offset="100%" stop-color="#0E7C66"/>
+    </linearGradient>
+  </defs>
+  <g>
+    <!-- pin body -->
+    <path d="M20 4c-7.7 0-14 6.1-14 13.7 0 9.9 12.1 20.9 13.3 22a1.1 1.1 0 0 0 1.4 0C21.9 38.6 34 27.6 34 17.7 34 10.1 27.7 4 20 4z"
+          fill="url(#cartoPin)"/>
+    <!-- bag void -->
+    <path d="M14.6 14.2h10.8l-1.1 11.3a1.6 1.6 0 0 1-1.6 1.4h-5.4a1.6 1.6 0 0 1-1.6-1.4z"
+          fill="#fff"/>
+    <!-- bag handle -->
+    <path d="M17.2 14.2a2.8 2.8 0 0 1 5.6 0" fill="none" stroke="#fff"
+          stroke-width="1.8" stroke-linecap="round"/>
+  </g>
+  <text x="42" y="33" font-family="'Inter','Helvetica Neue',Helvetica,Arial,sans-serif"
+        font-size="26" font-weight="700" letter-spacing="-0.8" fill="#123049">carto</text>
+</svg>

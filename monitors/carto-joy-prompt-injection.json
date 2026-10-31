@@ -1,0 +1,24 @@
+{
+  "name": "[Carto] Joy assistant \u2014 prompt injection attempts",
+  "type": "log alert",
+  "query": "logs(\"service:carto-joy @injection_suspected:true\").index(\"*\").rollup(\"count\").last(\"15m\") > 3",
+  "message": "{{#is_alert}}\n**{{value}} prompt-injection attempts against the Joy assistant in the last 15 minutes.**\n\nThese are customer messages trying to override Joy's instructions \u2014 refund codes, system-prompt extraction, forced delivery confirmations. Open the LLM Observability trace to see the prompt, the context block it was given and what the model actually returned; the customer id and transaction id are on the same span.\n{{/is_alert}}",
+  "tags": [
+    "failure_mode:prompt_injection",
+    "surface:ai",
+    "harness:carto",
+    "team:carto-digital",
+    "purpose:carto-demo",
+    "business_unit:carto-digital"
+  ],
+  "priority": 3,
+  "options": {
+    "notify_no_data": false,
+    "renotify_interval": 0,
+    "include_tags": true,
+    "thresholds": {
+      "critical": 3
+    },
+    "enable_logs_sample": true
+  }
+}

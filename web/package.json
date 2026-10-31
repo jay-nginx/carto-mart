@@ -1,0 +1,22 @@
+{
+  "name": "carto-web",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Carto storefront SPA — browse, bag, checkout, order tracking and the Joy assistant. RUM + Session Replay + Product Analytics, with Carto-minted customer/order/transaction ids in RUM global context so a browser session joins the order journey past the fulfilment seam.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@datadog/browser-rum": "^5.31.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.2"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^5.4.9"
+  }
+}

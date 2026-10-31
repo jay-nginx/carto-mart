@@ -1,0 +1,550 @@
+{
+  "title": "Carto \u2014 Order Journey & Transaction Tracking",
+  "description": "Follow one Carto transaction across every signal using the ids Carto mints itself (txn_id / order_id / customer_id) rather than only the Datadog trace id \u2014 which is what makes the journey followable past the fulfilment seam, where the WMS and carrier produce no telemetry. Created by the carto-demo harness.",
+  "layout_type": "ordered",
+  "reflow_type": "auto",
+  "template_variables": [
+    {
+      "name": "env",
+      "prefix": "env",
+      "available_values": [],
+      "default": "prd"
+    },
+    {
+      "name": "txn_id",
+      "prefix": "@carto.txn_id",
+      "available_values": [],
+      "default": "*"
+    },
+    {
+      "name": "order_id",
+      "prefix": "@carto.order_id",
+      "available_values": [],
+      "default": "*"
+    },
+    {
+      "name": "customer_id",
+      "prefix": "@carto.customer_id",
+      "available_values": [],
+      "default": "*"
+    }
+  ],
+  "tags": [
+    "team:carto-digital"
+  ],
+  "widgets": [
+    {
+      "definition": {
+        "type": "note",
+        "content": "# Carto \u2014 Order Journey & Transaction Tracking\nPaste a Carto id into the template variables above and this whole dashboard follows that one transaction.\n\n* **`$txn_id`** \u2014 `CRTX-\u2026`, minted at checkout, carried in `X-Carto-Txn-Id` end to end\n* **`$order_id`** \u2014 `CRT-YYYYMMDD-XXXXXX`, the number the customer quotes\n* **`$customer_id`** \u2014 `CT-CUST-\u2026`, also set as `usr.id`, so it joins RUM \u2194 APM \u2194 Logs\n\nThe ids are span tags and log attributes, never metric tags \u2014 unbounded cardinality belongs on spans and logs, not on a custom metric bill. The in-app tracking page at `${WEB_URL}/track` reassembles the same journey *including the warehouse and carrier hops that have no trace id at all*.",
+        "background_color": "blue",
+        "font_size": "14",
+        "text_align": "left",
+        "vertical_align": "top",
+        "show_tick": false,
+        "has_padding": true
+      }
+    },
+    {
+      "definition": {
+        "title": "1. The transaction, in spans",
+        "type": "group",
+        "layout_type": "ordered",
+        "background_color": "vivid_blue",
+        "widgets": [
+          {
+            "definition": {
+              "type": "note",
+              "content": "Every service on the order path tags its root span with `carto.txn_id`, `carto.order_id`, `carto.customer_id` and `usr.id`. One facet filter, whole journey \u2014 no query-language change between services and no manual correlation.",
+              "background_color": "gray",
+              "font_size": "12",
+              "text_align": "left",
+              "vertical_align": "top",
+              "show_tick": false,
+              "has_padding": true
+            }
+          },
+          {
+            "definition": {
+              "type": "list_stream",
+              "title": "Spans for this transaction",
+              "requests": [
+                {
+                  "response_format": "event_list",
+                  "query": {
+                    "data_source": "trace_stream",
+                    "query_string": "@carto.txn_id:$txn_id.value env:$env"
+                  },
+                  "columns": [
+                    {
+                      "field": "timestamp",
+                      "width": "auto"
+                    },
+                    {
+                      "field": "service",
+                      "width": "auto"
+                    },
+                    {
+                      "field": "resource_name",
+                      "width": "auto"
+                    },
+                    {
+                      "field": "duration",
+                      "width": "auto"
+                    },
+                    {
+                      "field": "@carto.txn_id",
+                      "width": "auto"
+                    },
+                    {
+                      "field": "@carto.order_id",
+                      "width": "auto"
+                    },
+                    {
+                      "field": "@carto.customer_id",
+                      "width": "auto"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "type": "list_stream",
+              "title": "Spans for this order number",
+              "requests": [
+                {
+                  "response_format": "event_list",
+                  "query": {
+                    "data_source": "trace_stream",
+                    "query_string": "@carto.order_id:$order_id.value env:$env"
+                  },
+                  "columns": [
+                    {
+                      "field": "timestamp",
+                      "width": "auto"
+                    },
+                    {
+                      "field": "service",
+                      "width": "auto"
+                    },
+                    {
+                      "field": "resource_name",
+                      "width": "auto"
+                    },
+                    {
+                      "field": "duration",
+                      "width": "auto"
+                    },
+                    {
+                      "field": "@carto.txn_id",
+                      "width": "auto"
+                    },
+                    {
+                      "field": "@carto.order_id",
+                      "width": "auto"
+                    },
+                    {
+                      "field": "@carto.customer_id",
+                      "width": "auto"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "type": "list_stream",
+              "title": "Everything this customer did",
+              "requests": [
+                {
+                  "response_format": "event_list",
+                  "query": {
+                    "data_source": "trace_stream",
+                    "query_string": "@carto.customer_id:$customer_id.value env:$env"
+                  },
+                  "columns": [
+                    {
+                      "field": "timestamp",
+                      "width": "auto"
+                    },
+                    {
+                      "field": "service",
+                      "width": "auto"
+                    },
+                    {
+                      "field": "resource_name",
+                      "width": "auto"
+                    },
+                    {
+                      "field": "duration",
+                      "width": "auto"
+                    },
+                    {
+                      "field": "@carto.txn_id",
+                      "width": "auto"
+                    },
+                    {
+                      "field": "@carto.order_id",
+                      "width": "auto"
+                    },
+                    {
+                      "field": "@carto.customer_id",
+                      "width": "auto"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "2. The same transaction, in logs",
+        "type": "group",
+        "layout_type": "ordered",
+        "background_color": "vivid_purple",
+        "widgets": [
+          {
+            "definition": {
+              "type": "note",
+              "content": "The logs are not a separate investigation: same ids, same records the trace links to. `@txn_id`, `@order_id` and `@customer_id` are promoted attributes on every record from every service, including the black-box fulfilment hops.",
+              "background_color": "gray",
+              "font_size": "12",
+              "text_align": "left",
+              "vertical_align": "top",
+              "show_tick": false,
+              "has_padding": true
+            }
+          },
+          {
+            "definition": {
+              "type": "log_stream",
+              "title": "Logs for this transaction",
+              "query": "@txn_id:$txn_id.value env:$env",
+              "indexes": [],
+              "columns": [
+                "service",
+                "@txn_id",
+                "@order_id",
+                "@customer_id"
+              ],
+              "message_display": "expanded-md",
+              "show_date_column": true,
+              "show_message_column": true,
+              "sort": {
+                "column": "time",
+                "order": "desc"
+              }
+            }
+          },
+          {
+            "definition": {
+              "type": "log_stream",
+              "title": "Logs for this order number",
+              "query": "@order_id:$order_id.value env:$env",
+              "indexes": [],
+              "columns": [
+                "service",
+                "@txn_id",
+                "@order_id",
+                "@customer_id"
+              ],
+              "message_display": "expanded-md",
+              "show_date_column": true,
+              "show_message_column": true,
+              "sort": {
+                "column": "time",
+                "order": "desc"
+              }
+            }
+          },
+          {
+            "definition": {
+              "type": "log_stream",
+              "title": "Black-box fulfilment hops (no trace context)",
+              "query": "@observability:blackbox env:$env",
+              "indexes": [],
+              "columns": [
+                "service",
+                "@txn_id",
+                "@order_id",
+                "@carrier_ref",
+                "@stage"
+              ],
+              "message_display": "expanded-md",
+              "show_date_column": true,
+              "show_message_column": true,
+              "sort": {
+                "column": "time",
+                "order": "desc"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "3. The customer's session",
+        "type": "group",
+        "layout_type": "ordered",
+        "background_color": "vivid_green",
+        "widgets": [
+          {
+            "definition": {
+              "type": "note",
+              "content": "`usr.id` is the customer id, and `@context.txn_id` is set in RUM global context the moment checkout starts \u2014 so an order number resolves to a session replay without a timestamp hunt.",
+              "background_color": "gray",
+              "font_size": "12",
+              "text_align": "left",
+              "vertical_align": "top",
+              "show_tick": false,
+              "has_padding": true
+            }
+          },
+          {
+            "definition": {
+              "type": "list_stream",
+              "title": "RUM events for this transaction",
+              "requests": [
+                {
+                  "response_format": "event_list",
+                  "query": {
+                    "data_source": "rum_stream",
+                    "query_string": "@context.txn_id:$txn_id.value"
+                  },
+                  "columns": [
+                    {
+                      "field": "timestamp",
+                      "width": "auto"
+                    },
+                    {
+                      "field": "@type",
+                      "width": "auto"
+                    },
+                    {
+                      "field": "@view.name",
+                      "width": "auto"
+                    },
+                    {
+                      "field": "@usr.id",
+                      "width": "auto"
+                    },
+                    {
+                      "field": "@context.txn_id",
+                      "width": "auto"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "type": "list_stream",
+              "title": "RUM sessions for this customer",
+              "requests": [
+                {
+                  "response_format": "event_list",
+                  "query": {
+                    "data_source": "rum_stream",
+                    "query_string": "@usr.id:$customer_id.value"
+                  },
+                  "columns": [
+                    {
+                      "field": "timestamp",
+                      "width": "auto"
+                    },
+                    {
+                      "field": "@type",
+                      "width": "auto"
+                    },
+                    {
+                      "field": "@view.name",
+                      "width": "auto"
+                    },
+                    {
+                      "field": "@usr.id",
+                      "width": "auto"
+                    },
+                    {
+                      "field": "@context.txn_id",
+                      "width": "auto"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "4. Journey health across all transactions",
+        "type": "group",
+        "layout_type": "ordered",
+        "background_color": "vivid_orange",
+        "widgets": [
+          {
+            "definition": {
+              "title": "Tracking lookups (1h)",
+              "type": "query_value",
+              "precision": 0,
+              "autoscale": true,
+              "requests": [
+                {
+                  "queries": [
+                    {
+                      "data_source": "metrics",
+                      "name": "a",
+                      "query": "sum:carto.bff.track{env:$env}.as_count()",
+                      "aggregator": "sum"
+                    }
+                  ],
+                  "response_format": "scalar",
+                  "formulas": [
+                    {
+                      "formula": "a"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "title": "Lookups that found nothing",
+              "type": "query_value",
+              "precision": 0,
+              "autoscale": true,
+              "requests": [
+                {
+                  "queries": [
+                    {
+                      "data_source": "metrics",
+                      "name": "a",
+                      "query": "sum:carto.bff.track{env:$env,result:not_found}.as_count()",
+                      "aggregator": "sum"
+                    }
+                  ],
+                  "response_format": "scalar",
+                  "formulas": [
+                    {
+                      "formula": "a"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "title": "Tracking lookups by id kind",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "queries": [
+                    {
+                      "data_source": "metrics",
+                      "name": "a",
+                      "query": "sum:carto.bff.track{env:$env} by {id_kind}.as_count()"
+                    }
+                  ],
+                  "response_format": "timeseries",
+                  "formulas": [
+                    {
+                      "formula": "a"
+                    }
+                  ],
+                  "display_type": "bars"
+                }
+              ],
+              "show_legend": true
+            }
+          },
+          {
+            "definition": {
+              "title": "Orders stalled past the fulfilment seam",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "queries": [
+                    {
+                      "data_source": "metrics",
+                      "name": "a",
+                      "query": "avg:carto.fulfilment.orders_stalled{env:$env}"
+                    }
+                  ],
+                  "response_format": "timeseries",
+                  "formulas": [
+                    {
+                      "formula": "a"
+                    }
+                  ],
+                  "display_type": "area"
+                }
+              ],
+              "show_legend": true
+            }
+          },
+          {
+            "definition": {
+              "title": "Fulfilment stage transitions",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "queries": [
+                    {
+                      "data_source": "metrics",
+                      "name": "a",
+                      "query": "sum:carto.fulfilment.stage_transition{env:$env} by {stage}.as_count()"
+                    }
+                  ],
+                  "response_format": "timeseries",
+                  "formulas": [
+                    {
+                      "formula": "a"
+                    }
+                  ],
+                  "display_type": "bars"
+                }
+              ],
+              "show_legend": true
+            }
+          },
+          {
+            "definition": {
+              "title": "Checkout outcome mix",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "queries": [
+                    {
+                      "data_source": "metrics",
+                      "name": "a",
+                      "query": "sum:carto.checkout.order{env:$env} by {result}.as_count()"
+                    }
+                  ],
+                  "response_format": "timeseries",
+                  "formulas": [
+                    {
+                      "formula": "a"
+                    }
+                  ],
+                  "display_type": "bars"
+                }
+              ],
+              "show_legend": true
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

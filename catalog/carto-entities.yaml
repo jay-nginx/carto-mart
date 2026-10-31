@@ -1,0 +1,170 @@
+# Software Catalog entities for the Carto demo stack (schema v3).
+#
+# Pushed with: ./scripts/creds-from-env.sh ./scripts/dd-push.py catalog
+#
+# The system grouping is what makes the "one data model across the group" point
+# concrete: every service below belongs to the carto-digital-commerce system,
+# carries the same business tags the Agent stamps on hosts, and declares its
+# dependencies — so the service map, the ownership column and the catalog all
+# agree without anyone maintaining a spreadsheet.
+apiVersion: v3
+kind: system
+metadata:
+  name: carto-digital-commerce
+  displayName: Carto Digital Commerce
+  tags:
+    - harness:carto
+    - business_unit:carto-digital
+    - banner:carto
+    - channel:digital
+    - region:anz
+  links:
+    - name: Demo flow and run sheet
+      type: doc
+      url: ${WEB_URL}/demo-walkthrough.html
+    - name: Architecture
+      type: doc
+      url: ${WEB_URL}/architecture.html
+    - name: Transaction tracking
+      type: dashboard
+      url: ${WEB_URL}/track
+  owner: carto-digital
+spec:
+  components:
+    - service:carto-web
+    - service:carto-storefront
+    - service:carto-catalogue
+    - service:carto-checkout
+    - service:carto-fulfilment
+    - service:carto-joy
+    - datastore:carto-postgres
+---
+apiVersion: v3
+kind: service
+metadata:
+  name: carto-web
+  displayName: Carto storefront (web)
+  description: React storefront with RUM, Session Replay and the transaction tracking UI.
+  tags: [harness:carto, business_unit:carto-digital, tier:web, language:javascript]
+  owner: carto-digital
+spec:
+  type: web
+  lifecycle: production
+  tier: "1"
+  dependsOn:
+    - service:carto-storefront
+---
+apiVersion: v3
+kind: service
+metadata:
+  name: carto-storefront
+  displayName: Carto storefront BFF
+  description: >-
+    Node BFF behind the storefront. Mints the Carto transaction id, propagates
+    customer/order/transaction ids downstream, and serves the transaction
+    tracking API that reassembles a journey from any of the three ids.
+  tags: [harness:carto, business_unit:carto-digital, tier:bff, language:nodejs]
+  owner: carto-digital
+spec:
+  type: web
+  lifecycle: production
+  tier: "1"
+  dependsOn:
+    - service:carto-catalogue
+    - service:carto-checkout
+    - service:carto-fulfilment
+    - service:carto-joy
+    - datastore:carto-postgres
+---
+apiVersion: v3
+kind: service
+metadata:
+  name: carto-catalogue
+  displayName: Carto catalogue
+  description: >-
+    Product range, search and inventory reservation. Owns the content-correctness
+    contract at /new-range that the Carto synthetic asserts against.
+  tags: [harness:carto, business_unit:carto-digital, tier:backend, language:python]
+  owner: carto-digital
+spec:
+  type: web
+  lifecycle: production
+  tier: "1"
+  dependsOn:
+    - datastore:carto-postgres
+---
+apiVersion: v3
+kind: service
+metadata:
+  name: carto-checkout
+  displayName: Carto checkout and payments
+  description: >-
+    Card authorisation, order creation and the hand-off to fulfilment. Issues the
+    order id the customer quotes.
+  tags: [harness:carto, business_unit:carto-digital, tier:backend, language:python]
+  owner: carto-digital
+spec:
+  type: web
+  lifecycle: production
+  tier: "1"
+  dependsOn:
+    - service:carto-catalogue
+    - service:carto-fulfilment
+    - datastore:carto-postgres
+---
+apiVersion: v3
+kind: service
+metadata:
+  name: carto-fulfilment
+  displayName: Carto fulfilment gateway
+  description: >-
+    The seam. The dispatch hand-off is traced; everything after it (warehouse
+    pick, carrier collection, delivery) happens asynchronously with no trace
+    context and is joinable only by the Carto transaction id.
+  tags:
+    - harness:carto
+    - business_unit:carto-supply-chain
+    - tier:fulfilment
+    - language:python
+    - observability:partial-blackbox
+  owner: carto-supply-chain
+spec:
+  type: web
+  lifecycle: production
+  tier: "1"
+  dependsOn:
+    - datastore:carto-postgres
+---
+apiVersion: v3
+kind: service
+metadata:
+  name: carto-joy
+  displayName: Joy assistant
+  description: >-
+    Customer-facing LLM assistant, grounded in order state. Every turn is an LLM
+    Observability span carrying model, tokens, latency, groundedness and the same
+    customer and transaction ids as the order journey.
+  tags: [harness:carto, business_unit:carto-digital, tier:ai, language:python]
+  owner: carto-digital
+spec:
+  type: web
+  lifecycle: production
+  tier: "2"
+  dependsOn:
+    - datastore:carto-postgres
+---
+apiVersion: v3
+kind: datastore
+metadata:
+  name: carto-postgres
+  displayName: Carto commerce database
+  description: >-
+    Postgres 16 with Database Monitoring enabled. Holds the product range, orders
+    and the transaction_ledger that makes a journey reconstructable past the
+    fulfilment seam.
+  tags: [harness:carto, business_unit:carto-digital, tier:db, language:postgres]
+  owner: carto-digital
+spec:
+  type: postgres
+  lifecycle: production
+  tier: "1"

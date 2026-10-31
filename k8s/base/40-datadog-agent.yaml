@@ -1,0 +1,220 @@
+# ===========================================================================
+#  Datadog Agent as a DaemonSet.
+#
+#  WHY NOT THE OPERATOR OR THE HELM CHART
+#  Both are the right answer for a real cluster and the README says so. This
+#  manifest exists because the demo's value is that you can READ it: every
+#  capability the story relies on is one visible line, and a reviewer can see
+#  exactly what is switched on rather than diffing values.yaml against a chart.
+#  For production, `helm install datadog datadog/datadog` and port the env
+#  below into values.yaml.
+#
+#  One per node, because:
+#    * traces arrive from pods on the same node via status.hostIP
+#    * container logs are read from the node's filesystem
+#    * process and system-probe data are per-node by definition
+# ===========================================================================
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: datadog-agent
+  namespace: carto
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: datadog-agent
+rules:
+  # Kubernetes State Metrics and the orchestrator explorer need to read the
+  # shape of the cluster. Read-only throughout: the Agent never mutates.
+  - apiGroups: [""]
+    resources: ["services", "events", "endpoints", "pods", "nodes", "componentstatuses",
+                "namespaces", "persistentvolumes", "persistentvolumeclaims",
+                "resourcequotas", "replicationcontrollers", "limitranges"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "daemonsets", "statefulsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["cronjobs", "jobs"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch"]
+  - nonResourceURLs: ["/metrics", "/healthz", "/version"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["nodes/metrics", "nodes/spec", "nodes/stats", "nodes/proxy"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: datadog-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: datadog-agent
+subjects:
+  - kind: ServiceAccount
+    name: datadog-agent
+    namespace: carto
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: datadog-agent
+  namespace: carto
+  labels:
+    app: datadog-agent
+    app.kubernetes.io/part-of: carto-demo
+spec:
+  selector:
+    matchLabels: { app: datadog-agent }
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels: { app: datadog-agent }
+    spec:
+      serviceAccountName: datadog-agent
+      # The Agent must see the node's processes and network namespace for the
+      # process agent and system-probe to mean anything.
+      hostPID: true
+      tolerations:
+        # Run on control-plane nodes too; on kind that is the only node there is.
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: agent
+          image: gcr.io/datadoghq/agent:7
+          ports:
+            - name: traceport
+              containerPort: 8126
+              hostPort: 8126        # what status.hostIP:8126 resolves to
+              protocol: TCP
+            - name: dogstatsdport
+              containerPort: 8125
+              hostPort: 8125
+              protocol: UDP
+            - name: otlphttp
+              containerPort: 4318
+              hostPort: 4318
+              protocol: TCP
+            - name: health
+              containerPort: 5555
+              protocol: TCP
+          env:
+            - name: DD_API_KEY
+              valueFrom: { secretKeyRef: { name: carto-secrets, key: DD_API_KEY } }
+            - name: DD_SITE
+              valueFrom: { configMapKeyRef: { name: carto-config, key: DD_SITE } }
+            - name: DD_KUBERNETES_KUBELET_HOST
+              valueFrom: { fieldRef: { fieldPath: status.hostIP } }
+            - name: DD_ENV
+              valueFrom: { configMapKeyRef: { name: carto-config, key: DD_ENV } }
+            # The business tag taxonomy the demo argues for. Every host metric,
+            # log and trace from this node inherits these.
+            - name: DD_TAGS
+              value: >-
+                harness:carto harness_instance:carto purpose:carto-demo
+                customer:carto-demo business_unit:carto-digital banner:carto
+                channel:digital region:anz instrumentation:agent
+            - name: DD_APM_ENABLED
+              value: "true"
+            - name: DD_APM_NON_LOCAL_TRAFFIC
+              value: "true"
+            - name: DD_DOGSTATSD_NON_LOCAL_TRAFFIC
+              value: "true"
+            - name: DD_LOGS_ENABLED
+              value: "true"
+            - name: DD_LOGS_CONFIG_CONTAINER_COLLECT_ALL
+              value: "true"
+            # Only this namespace. An unscoped Agent in a shared cluster
+            # collects every other team's logs and bills you for them.
+            - name: DD_CONTAINER_EXCLUDE_LOGS
+              value: "kube_namespace:.*"
+            - name: DD_CONTAINER_INCLUDE_LOGS
+              value: "kube_namespace:carto"
+            - name: DD_PROCESS_AGENT_ENABLED
+              value: "true"
+            - name: DD_PROCESS_CONFIG_PROCESS_COLLECTION_ENABLED
+              value: "true"
+            - name: DD_SYSTEM_PROBE_ENABLED
+              value: "true"
+            - name: DD_REMOTE_CONFIGURATION_ENABLED
+              value: "true"
+            - name: DD_CONTAINER_IMAGE_ENABLED
+              value: "true"
+            - name: DD_SBOM_ENABLED
+              value: "true"
+            - name: DD_SBOM_CONTAINER_IMAGE_ENABLED
+              value: "true"
+            - name: DD_APPSEC_ENABLED
+              value: "true"
+            # OTLP receiver: the services ship OTel METRICS here because neither
+            # tracer library provides a MeterProvider.
+            - name: DD_OTLP_CONFIG_RECEIVER_PROTOCOLS_HTTP_ENDPOINT
+              value: "0.0.0.0:4318"
+            - name: DD_OTLP_CONFIG_RECEIVER_PROTOCOLS_GRPC_ENDPOINT
+              value: "0.0.0.0:4317"
+            # Kubernetes resource collection for the orchestrator explorer.
+            # Required by the orchestrator explorer and for kube_cluster_name
+            # tagging. Without it the Agent logs "cluster name is empty" and the
+            # orchestrator check silently never runs. The overlays override it.
+            - name: DD_CLUSTER_NAME
+              valueFrom: { configMapKeyRef: { name: carto-config, key: DD_CLUSTER_NAME } }
+            - name: DD_ORCHESTRATOR_EXPLORER_ENABLED
+              value: "true"
+            - name: DD_COLLECT_KUBERNETES_EVENTS
+              value: "true"
+            - name: DD_LEADER_ELECTION
+              value: "true"
+            # The Agent only binds its health endpoint when this is set. Without
+            # it, /live and /ready on 5555 refuse the connection and the kubelet
+            # restarts a perfectly healthy Agent every 90 seconds.
+            - name: DD_HEALTH_PORT
+              value: "5555"
+            - name: DD_KUBELET_TLS_VERIFY
+              # kind's kubelet serves a self-signed cert. The GKE overlay sets
+              # this back to true, where the cert chain is real.
+              value: "false"
+          resources:
+            requests: { cpu: 200m, memory: 256Mi }
+            limits:   { memory: 768Mi }
+          volumeMounts:
+            - { name: dockersocket,  mountPath: /var/run/docker.sock,    readOnly: true }
+            - { name: procdir,       mountPath: /host/proc,              readOnly: true }
+            - { name: cgroups,       mountPath: /host/sys/fs/cgroup,     readOnly: true }
+            - { name: pointerdir,    mountPath: /opt/datadog-agent/run }
+            - { name: logpodpath,    mountPath: /var/log/pods,           readOnly: true }
+            - { name: logcontainerpath, mountPath: /var/log/containers,  readOnly: true }
+          livenessProbe:
+            httpGet: { path: /live, port: 5555 }
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          readinessProbe:
+            httpGet: { path: /ready, port: 5555 }
+            initialDelaySeconds: 20
+            periodSeconds: 15
+      volumes:
+        # On a containerd cluster (GKE and kind both) there is no docker.sock.
+        # Mounting it as a non-existent path is harmless: the Agent falls back
+        # to the kubelet and containerd for workload discovery.
+        - name: dockersocket
+          hostPath: { path: /var/run/docker.sock, type: FileOrCreate }
+        - name: procdir
+          hostPath: { path: /proc }
+        - name: cgroups
+          hostPath: { path: /sys/fs/cgroup }
+        - name: pointerdir
+          hostPath: { path: /var/lib/datadog-agent/run, type: DirectoryOrCreate }
+        - name: logpodpath
+          hostPath: { path: /var/log/pods }
+        - name: logcontainerpath
+          hostPath: { path: /var/log/containers }

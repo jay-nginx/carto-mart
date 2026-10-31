@@ -1,0 +1,73 @@
+{
+  "name": "[Carto] Homepage new-range shelf (browser)",
+  "type": "browser",
+  "message": "@here The Carto homepage is rendering an EMPTY new-range shelf.\n\nThis test opens the storefront in a real browser and asserts on what a customer would actually see: the products published for this trade week are present on the page, and the empty-shelf banner is not. The screenshot attached to the failed run IS the evidence \u2014 you can hand it to a merchandising team without translation.\n\nNothing is down. The page returns HTTP 200, Core Web Vitals are unchanged and the availability check beside this one is green. The revenue being lost is the range being promoted this week.\n\nNext: GET /api/new-range on the storefront, then the publish job for the current range week.",
+  "config": {
+    "request": {
+      "method": "GET",
+      "url": "http://web/"
+    },
+    "assertions": [],
+    "variables": [],
+    "setCookie": ""
+  },
+  "steps": [
+    {
+      "name": "this week's range is on the homepage",
+      "type": "assertPageContains",
+      "allowFailure": false,
+      "isCritical": true,
+      "timeout": 20,
+      "params": {
+        "value": "Summer Entertaining Serve Board"
+      }
+    },
+    {
+      "name": "the shelf is not showing its empty state",
+      "type": "assertPageLacks",
+      "allowFailure": false,
+      "isCritical": true,
+      "timeout": 20,
+      "params": {
+        "value": "This shelf should have"
+      }
+    },
+    {
+      "name": "the range count reads 6 of 6",
+      "type": "assertPageContains",
+      "allowFailure": false,
+      "isCritical": true,
+      "timeout": 20,
+      "params": {
+        "value": "6 new products this week"
+      }
+    }
+  ],
+  "options": {
+    "device_ids": [
+      "chrome.laptop_large"
+    ],
+    "tick_every": 300,
+    "min_failure_duration": 0,
+    "min_location_failed": 1,
+    "retry": {
+      "count": 1,
+      "interval": 5000
+    },
+    "monitor_options": {
+      "renotify_interval": 0
+    },
+    "monitor_priority": 2,
+    "noScreenshot": false
+  },
+  "locations": [],
+  "tags": [
+    "harness:carto",
+    "team:carto-digital",
+    "purpose:carto-demo",
+    "env:prd",
+    "failure_mode:content_correctness",
+    "check:browser"
+  ],
+  "status": "live"
+}

@@ -1,0 +1,26 @@
+{
+  "name": "[Carto] Transaction failure for Raj Patel (CT-CUST-9001)",
+  "type": "log alert",
+  "query": "logs(\"@customer_id:CT-CUST-9001 status:error service:carto-*\").index(\"*\").rollup(\"count\").last(\"5m\") > 0",
+  "message": "@${ALERT_EMAIL}\n\n{{#is_alert}}\n**A transaction failed for Raj Patel \u2014 customer `CT-CUST-9001`.**\n\nThis monitor watches ONE shopper. Nothing automated uses that account: the load driver's shopper list excludes it and the order-journey synthetic signs in as a different shopper. So this alert means a human just had a transaction fail on screen, not that background traffic drifted.\n\n{{value}} error log record(s) in the last 5 minutes.\n\n**Follow the transaction, in this order:**\n1. The session \u2014 RUM, `@usr.id:CT-CUST-9001` \u2192 the replay of the click that failed.\n2. The trace \u2014 APM, `@carto.customer_id:CT-CUST-9001` \u2192 the errored span and its stack.\n3. The logs \u2014 `@customer_id:CT-CUST-9001 status:error` \u2192 already linked from the trace.\n4. The whole journey, including the hops Datadog cannot see \u2014 the app's own tracking page: ${WEB_URL}/track?q=CT-CUST-9001\n\nThe failing transaction's own ids are on every record above: `@txn_id` (`CRTX-\u2026`, minted at checkout) and `@order_id` (`CRT-\u2026`, what the customer would quote). Either one narrows all four views to that single attempt.\n\nTo clear the injected failure: ${WEB_URL}/api/demo/user-fix\n{{/is_alert}}\n{{#is_recovery}}\nNo further failures for `CT-CUST-9001` in the last 5 minutes.\n{{/is_recovery}}",
+  "tags": [
+    "harness:carto",
+    "team:carto-digital",
+    "purpose:carto-demo",
+    "business_unit:carto-digital",
+    "customer_id:ct-cust-9001",
+    "scope:presenter_account"
+  ],
+  "priority": 2,
+  "options": {
+    "thresholds": {
+      "critical": 0
+    },
+    "notify_no_data": false,
+    "renotify_interval": 60,
+    "include_tags": true,
+    "enable_logs_sample": true,
+    "escalation_message": "Still failing for Raj Patel (CT-CUST-9001).",
+    "new_host_delay": 0
+  }
+}

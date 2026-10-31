@@ -1,0 +1,11 @@
+# kind's ingress is ingress-nginx, installed by scripts/kind-up.sh. The GCE
+# annotation in the base would be ignored and nothing would route.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: carto
+  namespace: carto
+  annotations:
+    kubernetes.io/ingress.class: nginx
+spec:
+  ingressClassName: nginx

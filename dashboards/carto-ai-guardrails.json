@@ -1,0 +1,439 @@
+{
+  "title": "[Carto] AI guardrails \u2014 six pillars",
+  "description": "Governance for the Joy assistant's write path. Shows which pillar refused an agent action and why, the approval queue, and agent spend against budget. Evidence gaps and bypasses are the two signals that indicate a real problem rather than the guardrail doing its job.",
+  "layout_type": "ordered",
+  "reflow_type": "auto",
+  "tags": [
+    "team:carto-digital"
+  ],
+  "template_variables": [
+    {
+      "name": "env",
+      "prefix": "env",
+      "available_values": [],
+      "default": "*"
+    }
+  ],
+  "widgets": [
+    {
+      "definition": {
+        "type": "note",
+        "content": "## AI guardrails \u2014 the six pillars\\n\\nEvery action the Joy assistant attempts on a customer's order is evaluated by `carto-guardrails` before it runs. Pillars are checked in order and **fail closed**: a pillar that errors denies, and an unreachable evaluator means the agent refuses to act.\\n\\n**Identity** who is acting \u00b7 **Authority** may they \u00b7 **Condition** is it valid now \u00b7 **Human approval** should a person decide \u00b7 **Budget** can they afford it \u00b7 **Evidence** can it be proven afterwards\\n\\nA denial is the system working. The two widgets that mean something is *wrong* are **Evidence gaps** and **Bypassed actions**.",
+        "background_color": "blue",
+        "font_size": "14",
+        "text_align": "left",
+        "vertical_align": "top",
+        "show_tick": false,
+        "tick_pos": "50%",
+        "tick_edge": "left",
+        "has_padding": true
+      }
+    },
+    {
+      "definition": {
+        "title": "Actions evaluated (sum)",
+        "type": "query_value",
+        "precision": 0,
+        "autoscale": true,
+        "requests": [
+          {
+            "queries": [
+              {
+                "query": "sum:carto.guardrail.actions{$env}.as_count()",
+                "data_source": "metrics",
+                "name": "q",
+                "aggregator": "sum"
+              }
+            ],
+            "formulas": [
+              {
+                "formula": "q"
+              }
+            ],
+            "response_format": "scalar"
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "Denied (sum)",
+        "type": "query_value",
+        "precision": 0,
+        "autoscale": true,
+        "requests": [
+          {
+            "queries": [
+              {
+                "query": "sum:carto.guardrail.denials{$env}.as_count()",
+                "data_source": "metrics",
+                "name": "q",
+                "aggregator": "sum"
+              }
+            ],
+            "formulas": [
+              {
+                "formula": "q"
+              }
+            ],
+            "response_format": "scalar"
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "Evidence gaps \u2014 should be 0",
+        "type": "query_value",
+        "precision": 0,
+        "autoscale": true,
+        "requests": [
+          {
+            "queries": [
+              {
+                "query": "sum:carto.guardrail.denials{$env,pillar:evidence}.as_count()",
+                "data_source": "metrics",
+                "name": "q",
+                "aggregator": "sum"
+              }
+            ],
+            "formulas": [
+              {
+                "formula": "q"
+              }
+            ],
+            "response_format": "scalar"
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "Bypassed (guardrails off) \u2014 should be 0",
+        "type": "query_value",
+        "precision": 0,
+        "autoscale": true,
+        "requests": [
+          {
+            "queries": [
+              {
+                "query": "sum:carto.guardrail.bypassed{$env}.as_count()",
+                "data_source": "metrics",
+                "name": "q",
+                "aggregator": "sum"
+              }
+            ],
+            "formulas": [
+              {
+                "formula": "q"
+              }
+            ],
+            "response_format": "scalar"
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "Evaluations by pillar and decision",
+        "type": "timeseries",
+        "show_legend": true,
+        "legend_layout": "auto",
+        "legend_columns": [
+          "avg",
+          "max",
+          "value"
+        ],
+        "requests": [
+          {
+            "queries": [
+              {
+                "query": "sum:carto.guardrail.evaluations{$env} by {pillar,decision}.as_count()",
+                "data_source": "metrics",
+                "name": "query1"
+              }
+            ],
+            "formulas": [
+              {
+                "formula": "query1"
+              }
+            ],
+            "response_format": "timeseries",
+            "style": {
+              "palette": "dog_classic",
+              "line_type": "solid",
+              "line_width": "normal"
+            },
+            "display_type": "bars"
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "Denials by pillar \u2014 which gate is actually firing",
+        "type": "timeseries",
+        "show_legend": true,
+        "legend_layout": "auto",
+        "legend_columns": [
+          "avg",
+          "max",
+          "value"
+        ],
+        "requests": [
+          {
+            "queries": [
+              {
+                "query": "sum:carto.guardrail.denials{$env} by {pillar}.as_count()",
+                "data_source": "metrics",
+                "name": "query1"
+              }
+            ],
+            "formulas": [
+              {
+                "formula": "query1"
+              }
+            ],
+            "response_format": "timeseries",
+            "style": {
+              "palette": "dog_classic",
+              "line_type": "solid",
+              "line_width": "normal"
+            },
+            "display_type": "bars"
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "Action outcomes by type",
+        "type": "timeseries",
+        "show_legend": true,
+        "legend_layout": "auto",
+        "legend_columns": [
+          "avg",
+          "max",
+          "value"
+        ],
+        "requests": [
+          {
+            "queries": [
+              {
+                "query": "sum:carto.guardrail.actions{$env} by {action,decision}.as_count()",
+                "data_source": "metrics",
+                "name": "query1"
+              }
+            ],
+            "formulas": [
+              {
+                "formula": "query1"
+              }
+            ],
+            "response_format": "timeseries",
+            "style": {
+              "palette": "dog_classic",
+              "line_type": "solid",
+              "line_width": "normal"
+            },
+            "display_type": "bars"
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "Agent spend against the session budget (USD)",
+        "type": "timeseries",
+        "show_legend": true,
+        "legend_layout": "auto",
+        "legend_columns": [
+          "avg",
+          "max",
+          "value"
+        ],
+        "requests": [
+          {
+            "queries": [
+              {
+                "query": "max:carto.guardrail.budget_used_usd{$env} by {agent_id}",
+                "data_source": "metrics",
+                "name": "query1"
+              }
+            ],
+            "formulas": [
+              {
+                "formula": "query1"
+              }
+            ],
+            "response_format": "timeseries",
+            "style": {
+              "palette": "dog_classic",
+              "line_type": "solid",
+              "line_width": "normal"
+            },
+            "display_type": "line"
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "Per-pillar evaluation latency (p95 ms)",
+        "type": "timeseries",
+        "show_legend": true,
+        "legend_layout": "auto",
+        "legend_columns": [
+          "avg",
+          "max",
+          "value"
+        ],
+        "requests": [
+          {
+            "queries": [
+              {
+                "query": "p95:carto.guardrail.pillar_latency_ms{$env} by {pillar}",
+                "data_source": "metrics",
+                "name": "query1"
+              }
+            ],
+            "formulas": [
+              {
+                "formula": "query1"
+              }
+            ],
+            "response_format": "timeseries",
+            "style": {
+              "palette": "dog_classic",
+              "line_type": "solid",
+              "line_width": "normal"
+            },
+            "display_type": "line"
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "Human approvals: decided vs expired",
+        "type": "timeseries",
+        "show_legend": true,
+        "legend_layout": "auto",
+        "legend_columns": [
+          "avg",
+          "max",
+          "value"
+        ],
+        "requests": [
+          {
+            "queries": [
+              {
+                "query": "sum:carto.guardrail.approval_decisions{$env} by {status}.as_count()",
+                "data_source": "metrics",
+                "name": "query1"
+              },
+              {
+                "query": "sum:carto.guardrail.approvals_expired{$env}.as_count()",
+                "data_source": "metrics",
+                "name": "query2"
+              }
+            ],
+            "formulas": [
+              {
+                "formula": "query1",
+                "alias": "decided"
+              },
+              {
+                "formula": "query2",
+                "alias": "expired (denied)"
+              }
+            ],
+            "response_format": "timeseries",
+            "style": {
+              "palette": "dog_classic",
+              "line_type": "solid",
+              "line_width": "normal"
+            },
+            "display_type": "bars"
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "type": "note",
+        "content": "### Reading a denial\\n\\nClick any denial through to the logs below. Each pillar writes the exact facts it observed \u2014 the scope it looked up, the order state it found, the spend it summed \u2014 so a refusal explains itself without anyone reading the evaluator's source.\\n\\nActions are joined to the order by `@order_id` and across the fulfilment seam by `@txn_id`, because a trace id stops at the edge of the instrumented estate.",
+        "background_color": "gray",
+        "font_size": "12",
+        "text_align": "left",
+        "vertical_align": "top",
+        "show_tick": false,
+        "tick_pos": "50%",
+        "tick_edge": "left",
+        "has_padding": true
+      }
+    },
+    {
+      "definition": {
+        "title": "Denials, newest first",
+        "type": "list_stream",
+        "requests": [
+          {
+            "columns": [
+              {
+                "field": "timestamp",
+                "width": "auto"
+              },
+              {
+                "field": "service",
+                "width": "auto"
+              },
+              {
+                "field": "content",
+                "width": "full"
+              }
+            ],
+            "query": {
+              "data_source": "logs_stream",
+              "query_string": "service:carto-guardrails @guardrail_decision:deny",
+              "indexes": [],
+              "storage": "hot"
+            },
+            "response_format": "event_list"
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "Evidence gaps and bypasses \u2014 the two that are never benign",
+        "type": "list_stream",
+        "requests": [
+          {
+            "columns": [
+              {
+                "field": "timestamp",
+                "width": "auto"
+              },
+              {
+                "field": "service",
+                "width": "auto"
+              },
+              {
+                "field": "content",
+                "width": "full"
+              }
+            ],
+            "query": {
+              "data_source": "logs_stream",
+              "query_string": "service:carto-guardrails (@pillar:evidence @guardrail_decision:deny OR @guardrail_decision:bypassed)",
+              "indexes": [],
+              "storage": "hot"
+            },
+            "response_format": "event_list"
+          }
+        ]
+      }
+    }
+  ]
+}

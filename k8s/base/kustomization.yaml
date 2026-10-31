@@ -1,0 +1,28 @@
+# Base: everything the harness needs, portable across clusters.
+# Pick an overlay rather than applying this directly:
+#   kubectl apply -k k8s/overlays/kind     local, on Podman
+#   kubectl apply -k k8s/overlays/gke      Google Kubernetes Engine
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: carto
+
+# NOTE: 02-secret.yaml is deliberately NOT listed. It is a placeholder with
+# empty values, and applying it would overwrite a populated carto-secrets with
+# blanks — which fails as "You must set either a DD_API_KEY" in the Agent, well
+# away from the cause. Create the Secret from carto.env instead:
+#   ./scripts/kind-up.sh   or   ./scripts/gke-deploy.sh
+# or by hand, with the command in the README under "Credentials in Kubernetes".
+resources:
+  - 00-namespace.yaml
+  - 01-config.yaml
+  - 11-postgres-init.yaml
+  - 10-postgres.yaml
+  - 20-services.yaml
+  - 30-web.yaml
+  - 40-datadog-agent.yaml
+
+
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/part-of: carto-demo

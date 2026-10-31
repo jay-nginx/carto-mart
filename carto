@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# km — one-word control surface for the Carto demo harness. Thin wrapper over
+# the Makefile so a presenter never has to remember target names mid-demo.
+#
+#   ./km up | stop | start | cycle | status | doctor | smoke | validate
+#   ./km down | ps | logs | rum | assets | reset
+#   ./km break new-range | payment | peak | stall | errors | raj
+#   ./km fix   new-range | payment | peak | stall | raj
+#   ./km raj                     Raj Patel's ids, last transaction, DD links
+#   ./km track <CRTX-… | CRT-… | CT-CUST-… | bob>
+#   ./km open  storefront | demo | arch | track | telemetry
+set -euo pipefail
+cd "$(dirname "$0")"
+
+# Podman support. Podman Desktop installs to /opt/podman/bin and does NOT put
+# itself on PATH, ships no `docker compose` plugin, and needs DOCKER_HOST set
+# so the standalone docker-compose finds the machine socket. When there is no
+# reachable Docker daemon but a Podman machine is running, point the harness at
+# Podman. Explicit opt-out: CARTO_RUNTIME=docker.
+if [[ "${CARTO_RUNTIME:-auto}" != "docker" ]] && ! docker info >/dev/null 2>&1 \
+   && [[ -x /opt/podman/bin/podman ]] \
+   && /opt/podman/bin/podman machine inspect >/dev/null 2>&1; then
+  . ./scripts/podman-env.sh
+  export COMPOSE_FILE="compose.yaml:docker-compose.override.yaml:docker-compose.rum-dns.yaml:docker-compose.podman.yaml"
+fi
+BFF="${BFF:-http://localhost:8091}"
+WEB="${WEB:-${WEB_URL:-http://localhost:5175}}"
+
+usage() { sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; }
+
+case "${1:-help}" in
+  up|down|ps|logs|doctor|smoke|assets|build|restart|clean|nuke|validate) exec make "$1" ;;
+  stop|start|status) exec ./scripts/stack.sh "$1" ;;
+  cycle)             exec ./scripts/stack.sh restart ;;
+  rum)     exec make rum ;;
+  reset)   exec make demo-reset ;;
+  state)   exec make demo-state ;;
+  break)
+    case "${2:-}" in
+      new-range) exec make demo-new-range-break ;;
+      payment)   exec make demo-payment-break METHOD="${3:-EXPRESS_DELIVERY}" ;;
+      peak)      exec make demo-peak ;;
+      stall)     exec make demo-stall STAGE="${3:-at_carrier}" ;;
+      errors)    exec make demo-errors PCT="${3:-60}" ;;
+      raj|user)  exec make demo-user-break CUSTOMER="${3:-CT-CUST-9001}" ;;
+      *) echo "break what? new-range | payment | peak | stall | errors | raj"; exit 2 ;;
+    esac ;;
+  fix)
+    case "${2:-}" in
+      new-range) exec make demo-new-range-fix ;;
+      payment)   exec make demo-payment-fix ;;
+      peak)      exec make demo-peak-fix ;;
+      stall)     exec make demo-stall-fix ;;
+      raj|user)  exec make demo-user-fix CUSTOMER="${3:-CT-CUST-9001}" ;;
+      *) echo "fix what? new-range | payment | peak | stall | raj"; exit 2 ;;
+    esac ;;
+  raj|user)
+    exec make demo-user CUSTOMER="${2:-CT-CUST-9001}" ;;
+  track)
+    [[ -n "${2:-}" ]] || { echo "usage: ./km track <txn_id|order_id|customer_id|username>"; exit 2; }
+    curl -s "$BFF/api/track?q=$2" | python3 -m json.tool ;;
+  recent)
+    curl -s "$BFF/api/track/recent" | python3 -c '
+import json,sys
+for t in json.load(sys.stdin)["transactions"]:
+    print("%-22s %-22s %-14s %-18s $%s" % (t["txn_id"], t["order_id"], t["status"],
+                                           t.get("full_name") or t["customer_id"], t["total"]))' ;;
+  open)
+    case "${2:-storefront}" in
+      storefront) open "$WEB" ;;
+      demo)       open "$WEB/demo-walkthrough.html" ;;
+      arch*)      open "$WEB/architecture.html" ;;
+      raj|user)
+    exec make demo-user CUSTOMER="${2:-CT-CUST-9001}" ;;
+  track)      open "$WEB/track" ;;
+      telemetry)  open "$WEB/telemetry" ;;
+      *) echo "open what? storefront | demo | arch | track | telemetry"; exit 2 ;;
+    esac ;;
+  help|-h|--help) usage ;;
+  *) echo "unknown command: $1"; echo; usage; exit 2 ;;
+esac

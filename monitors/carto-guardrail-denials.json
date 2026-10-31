@@ -1,0 +1,24 @@
+{
+  "name": "[Carto] AI guardrail denying agent actions",
+  "type": "log alert",
+  "query": "logs(\"service:carto-guardrails @guardrail_decision:deny\").index(\"*\").rollup(\"count\").by(\"@pillar\").last(\"15m\") > 5",
+  "priority": 3,
+  "tags": [
+    "harness:carto",
+    "team:carto-digital",
+    "purpose:carto-demo",
+    "business_unit:carto-digital",
+    "failure_mode:guardrail_denial",
+    "surface:ai-governance"
+  ],
+  "message": "{{#is_alert}}\n**The AI guardrail is refusing agent actions on pillar `{{[@pillar].name}}`.**\n\n{{value}} denials in the last 15 minutes.\n\nA denial is the guardrail WORKING, so this is informational unless the rate is new. What it usually means per pillar:\n\n- `identity` \u2014 an agent is calling without a valid attestation, or acting on an order with nobody signed in. Check whether an agent was deployed without its token.\n- `authority` \u2014 an agent is attempting something outside its granted scope. If this is sudden, someone changed what the agent tries to do without changing its grants.\n- `condition` \u2014 preconditions failing. A spike usually means upstream order state is not what the agent believes it is.\n- `budget` \u2014 a session hit its spend ceiling. Investigate a runaway loop before raising the ceiling.\n- `evidence` \u2014 actions that cannot be audited. This one is never benign: it means decisions are being made that nobody can reconstruct afterwards.\n\nDecision trail: the evaluator writes every pillar verdict to `guardrail_decisions`, joinable to the order by `@order_id` and across the fulfilment seam by `@txn_id`.\n\n- Logs: `service:carto-guardrails @guardrail_decision:deny`\n- Traces: `service:carto-guardrails` then the `guardrail.*` spans\n- In the app: /guardrails\n{{/is_alert}}\n{{#is_recovery}}\nDenials on `{{[@pillar].name}}` are back under the threshold.\n{{/is_recovery}}",
+  "options": {
+    "thresholds": {
+      "critical": 5
+    },
+    "notify_no_data": false,
+    "renotify_interval": 0,
+    "include_tags": true,
+    "enable_logs_sample": true
+  }
+}

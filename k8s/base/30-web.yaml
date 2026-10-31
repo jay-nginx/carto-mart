@@ -1,0 +1,162 @@
+# The storefront: an nginx image serving the built React bundle, plus the
+# Ingress that fronts the whole demo.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: carto
+  labels:
+    app: web
+    tags.datadoghq.com/service: carto-web
+spec:
+  selector: { app: web }
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: carto
+  labels:
+    app: web
+    app.kubernetes.io/part-of: carto-demo
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: web }
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  template:
+    metadata:
+      labels:
+        app: web
+        tier: web
+        tags.datadoghq.com/service: carto-web
+        tags.datadoghq.com/env: prd
+        tags.datadoghq.com/version: "0.1.0"
+      annotations:
+        ad.datadoghq.com/web.logs: '[{"source": "nginx", "service": "carto-web"}]'
+    spec:
+      containers:
+        - name: web
+          image: carto-web:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80
+          # No env needed. web/nginx.conf proxies /api to http://bff:8080,
+          # which resolves identically here because the Service is also named
+          # bff on 8080 — the Compose service name and the Kubernetes Service
+          # name were deliberately kept the same so one nginx.conf serves both.
+          readinessProbe:
+            httpGet: { path: /healthz, port: 80 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: 80 }
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits:   { memory: 192Mi }
+---
+# The browser-journey driver. One replica only: it runs three concurrent
+# headless Chrome shoppers, and scaling it multiplies RUM sessions rather than
+# proving anything. No Service, because nothing calls it.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: load
+  namespace: carto
+  labels:
+    app: load
+    app.kubernetes.io/part-of: carto-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: load }
+  template:
+    metadata:
+      labels:
+        app: load
+        tier: load
+        tags.datadoghq.com/service: carto-load
+        tags.datadoghq.com/env: prd
+        tags.datadoghq.com/version: "0.1.0"
+      annotations:
+        ad.datadoghq.com/load.logs: '[{"source": "nodejs", "service": "carto-load"}]'
+    spec:
+      initContainers:
+        - name: wait-for-web
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z web 80; do echo waiting for web; sleep 2; done']
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+      containers:
+        - name: load
+          image: carto-load:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DD_AGENT_HOST
+              valueFrom: { fieldRef: { fieldPath: status.hostIP } }
+            - name: DD_SERVICE
+              value: carto-load
+            - name: TARGET_URL
+              value: http://web
+            - name: DD_ENV
+              valueFrom: { configMapKeyRef: { name: carto-config, key: DD_ENV } }
+            - name: DD_VERSION
+              valueFrom: { configMapKeyRef: { name: carto-config, key: DD_VERSION } }
+            - name: LOAD_CONCURRENCY
+              valueFrom: { configMapKeyRef: { name: carto-config, key: LOAD_CONCURRENCY } }
+            - name: LOOP_DELAY_MS
+              valueFrom: { configMapKeyRef: { name: carto-config, key: LOOP_DELAY_MS } }
+            - name: RAGE_CLICK_PCT
+              valueFrom: { configMapKeyRef: { name: carto-config, key: RAGE_CLICK_PCT } }
+          # Chrome needs more than the default shm, and a headless browser is
+          # the one workload here that will actually use half a gig.
+          volumeMounts:
+            - name: dshm
+              mountPath: /dev/shm
+          resources:
+            requests: { cpu: 200m, memory: 512Mi }
+            limits:   { memory: 1Gi }
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: carto
+  namespace: carto
+  annotations:
+    # GKE's built-in ingress controller. The kind overlay swaps this for
+    # nginx, because kind has no GCE load balancer to talk to.
+    kubernetes.io/ingress.class: "gce"
+spec:
+  rules:
+    - http:
+        paths:
+          # The BFF is matched FIRST and on a prefix, because /api/* must not
+          # fall through to the SPA's catch-all or every XHR returns index.html
+          # with a 200 and the storefront silently shows no products.
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: bff
+                port: { number: 8080 }
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port: { number: 80 }

@@ -1,0 +1,267 @@
+{
+  "name": "[Carto] Order journey end to end (with transaction tracking)",
+  "type": "api",
+  "subtype": "multi",
+  "message": "@here The Carto order journey is broken.\n\nThis test walks the whole path a customer walks \u2014 sign in, add to bag, check out, then look the resulting transaction up by the `txn_id` the checkout minted \u2014 and asserts on the tracking response, not just on the checkout response.\n\nThe last step is the interesting one: it proves the transaction is REASSEMBLABLE. If the ledger stops being written, or an id stops being propagated, checkout still returns 200 and this test still fails \u2014 which is the only way to catch a tracking regression before the contact centre does.\n\nStep failures map to: 1 auth, 2 catalogue, 3 bag, 4 checkout (payment / stock / fulfilment hand-off), 5 tracking + ledger.",
+  "config": {
+    "configVariables": [],
+    "steps": [
+      {
+        "name": "1. sign in as alice",
+        "subtype": "http",
+        "allowFailure": false,
+        "isCritical": true,
+        "request": {
+          "method": "POST",
+          "url": "http://bff:8080/api/login",
+          "timeout": 40,
+          "headers": {
+            "Content-Type": "application/json",
+            "X-Carto-Channel": "synthetic"
+          },
+          "body": "{\"username\": \"alice\", \"password\": \"demo\"}"
+        },
+        "assertions": [
+          {
+            "type": "statusCode",
+            "operator": "is",
+            "target": 200
+          },
+          {
+            "type": "body",
+            "operator": "validatesJSONPath",
+            "target": {
+              "jsonPath": "$.customer.customer_id",
+              "operator": "is",
+              "targetValue": "CT-CUST-1002"
+            }
+          }
+        ],
+        "extractedValues": [
+          {
+            "name": "TOKEN",
+            "type": "http_body",
+            "parser": {
+              "type": "json_path",
+              "value": "$.token"
+            }
+          },
+          {
+            "name": "CUSTOMER_ID",
+            "type": "http_body",
+            "parser": {
+              "type": "json_path",
+              "value": "$.customer.customer_id"
+            }
+          }
+        ]
+      },
+      {
+        "name": "2. browse the Home & Living range",
+        "subtype": "http",
+        "allowFailure": false,
+        "isCritical": true,
+        "request": {
+          "method": "GET",
+          "url": "http://bff:8080/api/products?category=Home%20%26%20Living&limit=5",
+          "timeout": 40,
+          "headers": {
+            "Content-Type": "application/json",
+            "X-Carto-Channel": "synthetic"
+          }
+        },
+        "assertions": [
+          {
+            "type": "statusCode",
+            "operator": "is",
+            "target": 200
+          },
+          {
+            "type": "body",
+            "operator": "validatesJSONPath",
+            "target": {
+              "jsonPath": "$.count",
+              "operator": "moreThan",
+              "targetValue": 0
+            }
+          }
+        ]
+      },
+      {
+        "name": "3. add the air fryer to the bag",
+        "subtype": "http",
+        "allowFailure": false,
+        "isCritical": true,
+        "request": {
+          "method": "POST",
+          "url": "http://bff:8080/api/bag",
+          "timeout": 40,
+          "headers": {
+            "Content-Type": "application/json",
+            "X-Carto-Channel": "synthetic",
+            "Authorization": "Bearer {{ TOKEN }}",
+            "X-Carto-Customer-Id": "{{ CUSTOMER_ID }}"
+          },
+          "body": "{\"sku\": \"43210003\", \"qty\": 1}"
+        },
+        "assertions": [
+          {
+            "type": "statusCode",
+            "operator": "is",
+            "target": 200
+          }
+        ]
+      },
+      {
+        "name": "4. check out for home delivery",
+        "subtype": "http",
+        "allowFailure": false,
+        "isCritical": true,
+        "request": {
+          "method": "POST",
+          "url": "http://bff:8080/api/checkout",
+          "timeout": 40,
+          "headers": {
+            "Content-Type": "application/json",
+            "X-Carto-Channel": "synthetic",
+            "Authorization": "Bearer {{ TOKEN }}",
+            "X-Carto-Customer-Id": "{{ CUSTOMER_ID }}"
+          },
+          "body": "{\"fulfilment_method\": \"HOME_DELIVERY\"}"
+        },
+        "assertions": [
+          {
+            "type": "statusCode",
+            "operator": "is",
+            "target": 200
+          },
+          {
+            "type": "body",
+            "operator": "validatesJSONPath",
+            "target": {
+              "jsonPath": "$.status",
+              "operator": "is",
+              "targetValue": "paid"
+            }
+          }
+        ],
+        "extractedValues": [
+          {
+            "name": "TXN_ID",
+            "type": "http_body",
+            "parser": {
+              "type": "json_path",
+              "value": "$.txn_id"
+            }
+          },
+          {
+            "name": "ORDER_ID",
+            "type": "http_body",
+            "parser": {
+              "type": "json_path",
+              "value": "$.order_id"
+            }
+          }
+        ]
+      },
+      {
+        "name": "5. reassemble the transaction by its txn_id",
+        "subtype": "http",
+        "allowFailure": false,
+        "isCritical": true,
+        "request": {
+          "method": "GET",
+          "url": "http://bff:8080/api/track?q={{ TXN_ID }}",
+          "timeout": 40,
+          "headers": {
+            "Content-Type": "application/json",
+            "X-Carto-Channel": "synthetic",
+            "Authorization": "Bearer {{ TOKEN }}",
+            "X-Carto-Customer-Id": "{{ CUSTOMER_ID }}"
+          }
+        },
+        "assertions": [
+          {
+            "type": "statusCode",
+            "operator": "is",
+            "target": 200
+          },
+          {
+            "type": "body",
+            "operator": "validatesJSONPath",
+            "target": {
+              "jsonPath": "$.id_kind",
+              "operator": "is",
+              "targetValue": "txn_id"
+            }
+          },
+          {
+            "type": "body",
+            "operator": "validatesJSONPath",
+            "target": {
+              "jsonPath": "$.transactions[0].summary.traced_hops",
+              "operator": "moreThan",
+              "targetValue": 5
+            }
+          }
+        ]
+      },
+      {
+        "name": "6. and again by the order number the customer quotes",
+        "subtype": "http",
+        "allowFailure": false,
+        "isCritical": true,
+        "request": {
+          "method": "GET",
+          "url": "http://bff:8080/api/track?q={{ ORDER_ID }}",
+          "timeout": 40,
+          "headers": {
+            "Content-Type": "application/json",
+            "X-Carto-Channel": "synthetic",
+            "Authorization": "Bearer {{ TOKEN }}",
+            "X-Carto-Customer-Id": "{{ CUSTOMER_ID }}"
+          }
+        },
+        "assertions": [
+          {
+            "type": "statusCode",
+            "operator": "is",
+            "target": 200
+          },
+          {
+            "type": "body",
+            "operator": "validatesJSONPath",
+            "target": {
+              "jsonPath": "$.id_kind",
+              "operator": "is",
+              "targetValue": "order_id"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "locations": [],
+  "options": {
+    "tick_every": 900,
+    "min_failure_duration": 0,
+    "min_location_failed": 1,
+    "retry": {
+      "count": 0,
+      "interval": 3000
+    },
+    "monitor_options": {
+      "renotify_interval": 0
+    },
+    "monitor_priority": 2
+  },
+  "tags": [
+    "harness:carto",
+    "team:carto-digital",
+    "purpose:carto-demo",
+    "env:prd",
+    "check:journey",
+    "surface:tracking"
+  ],
+  "status": "live"
+}

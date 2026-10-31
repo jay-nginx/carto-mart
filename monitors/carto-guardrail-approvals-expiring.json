@@ -1,0 +1,24 @@
+{
+  "name": "[Carto] Human approvals expiring unanswered",
+  "type": "log alert",
+  "query": "logs(\"service:carto-guardrails @pillar:human_approval @guardrail_decision:expired\").index(\"*\").rollup(\"count\").last(\"30m\") > 2",
+  "priority": 3,
+  "tags": [
+    "harness:carto",
+    "team:carto-digital",
+    "purpose:carto-demo",
+    "business_unit:carto-digital",
+    "failure_mode:approval_timeout",
+    "surface:ai-governance"
+  ],
+  "message": "{{#is_alert}}\n**Agent actions are timing out waiting for a human.**\n\n{{value}} approval request(s) expired unanswered in the last 30 minutes. Expiry is a DENY, so these actions did not happen.\n\nEither nobody is watching the queue, or the threshold is set low enough that routine work is being parked. Both are worth knowing: the first is an operational gap, the second means the guardrail is costing more than it protects.\n\n- Queue: /guardrails in the app, or `GET /approvals?status=expired`\n- Threshold: `GUARDRAIL_APPROVAL_THRESHOLD_AUD`, TTL: `GUARDRAIL_APPROVAL_TTL_S`\n{{/is_alert}}\n{{#is_recovery}}\nApprovals are being answered in time again.\n{{/is_recovery}}",
+  "options": {
+    "thresholds": {
+      "critical": 2
+    },
+    "notify_no_data": false,
+    "renotify_interval": 0,
+    "include_tags": true,
+    "enable_logs_sample": true
+  }
+}

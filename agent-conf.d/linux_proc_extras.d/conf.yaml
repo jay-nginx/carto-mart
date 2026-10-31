@@ -1,0 +1,8 @@
+# linux_proc_extras — extra metrics from /proc that the default `system`
+# check doesn't ship: interrupts, IPC stats, message queues, etc. Adds
+# system-level richness without much cost.
+
+init_config:
+
+instances:
+  - {}

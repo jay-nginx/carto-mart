@@ -1,0 +1,23 @@
+{
+  "name": "[Carto] Checkout p95 latency above 2s",
+  "type": "metric alert",
+  "query": "avg(last_10m):p95:carto.bff.checkout.duration{env:prd} > 2000",
+  "message": "{{#is_alert}}\n**Checkout p95 is {{value}}ms.**\n\nUnder peak trade the usual cause here is contention on inventory reservation rather than the BFF itself: look at Database Monitoring for lock waits on `inventory`, then at the reservation span in the checkout trace.\n{{/is_alert}}",
+  "tags": [
+    "failure_mode:peak_trade",
+    "harness:carto",
+    "team:carto-digital",
+    "purpose:carto-demo",
+    "business_unit:carto-digital"
+  ],
+  "priority": 3,
+  "options": {
+    "notify_no_data": false,
+    "renotify_interval": 0,
+    "include_tags": true,
+    "thresholds": {
+      "critical": 2000,
+      "warning": 1200
+    }
+  }
+}

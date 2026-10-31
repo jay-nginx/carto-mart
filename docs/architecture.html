@@ -1,0 +1,732 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Carto × Datadog — architecture</title>
+<style>
+  :root {
+    --ground:#f7f7f8; --surface:#ffffff; --sunken:#f0f0f2;
+    --ink:#1c1c1e; --ink-soft:#55565a; --ink-faint:#8a8a8e;
+    --line:#e0e0e0; --line-soft:#ebebeb;
+    --red:#0E7C66; --blue:#F2A33C; --navy:#123049;
+    --good:#1b7f4b; --warn:#b7791f; --bad:#c0202f;
+    --measure:74ch; --radius:6px;
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:#131316; --surface:#1b1b1f; --sunken:#23232a;
+      --ink:#ececf0; --ink-soft:#a9a9b2; --ink-faint:#7c7c86;
+      --line:#32323a; --line-soft:#282830;
+      --red:#ff6072; --blue:#7c9bff; --navy:#6ea8e0;
+      --good:#67c48f; --warn:#e0b063; --bad:#ff7d8a;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:#131316; --surface:#1b1b1f; --sunken:#23232a;
+    --ink:#ececf0; --ink-soft:#a9a9b2; --ink-faint:#7c7c86;
+    --line:#32323a; --line-soft:#282830;
+    --red:#ff6072; --blue:#7c9bff; --navy:#6ea8e0;
+    --good:#67c48f; --warn:#e0b063; --bad:#ff7d8a;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--ground); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:16px; line-height:1.6; -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:1080px; margin:0 auto; padding:44px 22px 90px; display:flex; flex-direction:column; gap:34px; }
+  .eyebrow { font-family:var(--mono); font-size:11px; font-weight:600; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--red); margin:0; }
+  h1 { font-size:clamp(28px,4vw,42px); line-height:1.08; letter-spacing:-.025em; font-weight:800; margin:0; }
+  h2 { font-size:22px; letter-spacing:-.015em; font-weight:750; margin:0; }
+  h3 { font-size:16px; font-weight:700; margin:0; }
+  header { display:flex; flex-direction:column; gap:12px; }
+  .standfirst { max-width:var(--measure); font-size:18px; color:var(--ink-soft); margin:0; }
+  .muted { max-width:var(--measure); font-size:14.5px; color:var(--ink-soft); margin:0; }
+  .portnote { font-weight:400; color:var(--ink-soft); }
+  p, ul, ol { max-width:var(--measure); margin:0; }
+  ul, ol { padding-left:22px; }
+  li + li { margin-top:5px; }
+  section { display:flex; flex-direction:column; gap:14px; }
+  a { color:var(--navy); text-underline-offset:2px; }
+  code { font-family:var(--mono); font-size:.86em; background:var(--sunken); padding:1.5px 5px; border-radius:4px; }
+  pre { background:var(--sunken); border:1px solid var(--line-soft); border-radius:6px; padding:12px 14px;
+    overflow-x:auto; margin:0; font-family:var(--mono); font-size:12.5px; line-height:1.5; }
+  pre code { background:none; padding:0; }
+  .logo { height:34px }
+  .status { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); border:1px solid var(--line);
+    border-radius:var(--radius); background:var(--surface); overflow:hidden; }
+  .status div { padding:11px 14px; border-right:1px solid var(--line-soft); }
+  .status div:last-child { border-right:0; }
+  .status dt { font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase;
+    color:var(--ink-faint); margin:0 0 3px; }
+  .status dd { margin:0; font-size:14px; font-weight:650; }
+  .tablewrap { overflow-x:auto; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); }
+  table { border-collapse:collapse; width:100%; font-size:13.5px; }
+  th,td { text-align:left; padding:9px 12px; border-bottom:1px solid var(--line-soft); vertical-align:top; }
+  th { font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase;
+    color:var(--ink-faint); border-bottom-color:var(--line); }
+  tr:last-child td { border-bottom:0; }
+  .seg { border:1px solid var(--line); border-left:4px solid var(--red); border-radius:var(--radius);
+    background:var(--surface); padding:18px 20px; display:flex; flex-direction:column; gap:12px; }
+  .seg--hil { border-left-color:var(--blue); }
+  .seg__head { display:flex; gap:14px; align-items:baseline; flex-wrap:wrap; }
+  .seg__time { font-family:var(--mono); font-size:12.5px; font-weight:700; color:var(--red); white-space:nowrap; }
+  .seg--hil .seg__time { color:var(--blue); }
+  .seg__who { font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.1em;
+    color:var(--ink-faint); }
+  .takeaway { border-top:1px dashed var(--line); padding-top:10px; font-size:14px; }
+  .takeaway strong { color:var(--good); }
+  .rung { display:inline-block; font-family:var(--mono); font-size:10.5px; font-weight:700;
+    text-transform:uppercase; letter-spacing:.08em; padding:2px 7px; border-radius:3px;
+    background:var(--sunken); color:var(--ink-soft); }
+  .callout { border:1px solid var(--line); border-radius:var(--radius); background:var(--surface);
+    padding:14px 16px; font-size:14.5px; }
+  .callout--warn { border-color:var(--warn); }
+  .callout--id { border-color:var(--blue); }
+  .btn { display:inline-block; font-family:var(--mono); font-size:12px; padding:5px 10px; border-radius:14px;
+    border:1px solid var(--line); background:var(--sunken); color:var(--ink); text-decoration:none; }
+  .btn:hover { border-color:var(--red); color:var(--red); }
+  .btnrow { display:flex; gap:8px; flex-wrap:wrap; }
+  .grid2 { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:14px; }
+  .diagram { border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); padding:16px; overflow-x:auto; }
+  .diagram svg { min-width:760px; }
+  footer { border-top:1px solid var(--line); padding-top:18px; font-size:13px; color:var(--ink-faint); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <img class="logo" src="/carto-logo.svg" alt="Carto">
+  <p class="eyebrow">Harness architecture</p>
+  <h1>What is running, and how every signal reaches Datadog</h1>
+  <p class="standfirst">
+    Eight containers on one laptop: a React storefront, a Node BFF, three Python services, an LLM
+    assistant, Postgres with Database Monitoring, a browser-driven load generator and the Datadog
+    Agent. Every service is instrumented for traces, logs and metrics, and every service also stamps
+    Carto's own customer, order and transaction ids onto what it emits.
+  </p>
+  <div class="status">
+    <div><dt>Storefront</dt><dd><a href="/" id="web-origin">this page's host</a></dd></div>
+    <div><dt>BFF</dt><dd>:8091</dd></div>
+    <div><dt>Catalogue / checkout / fulfilment</dt><dd>:8021 / :8022 / :8023</dd></div>
+    <div><dt>Joy assistant</dt><dd>:8024</dd></div>
+    <div><dt>AI guardrails</dt><dd>:8025</dd></div>
+  </div>
+</header>
+
+<section>
+  <h2>The order path</h2>
+  <p>
+    One click in the browser produces one distributed trace across five services and Postgres. The
+    dashed edges are the seam: work that happens later, with no inbound request and therefore no
+    trace context to continue.
+  </p>
+  <div class="diagram">
+<svg viewBox="0 0 980 560" role="img" aria-labelledby="archtitle archdesc" style="width:100%;height:auto">
+  <title id="archtitle">Carto demo architecture</title>
+  <desc id="archdesc">
+    The browser calls the storefront BFF, which calls the catalogue, checkout and Joy services.
+    Checkout calls the catalogue to reserve stock and the fulfilment gateway to hand the order off.
+    All services write to Postgres. The Datadog Agent collects traces, logs and metrics from every
+    service. After the hand-off, a warehouse worker and a carrier advance the order asynchronously
+    with no trace context; those hops are joined to the customer journey only by the Carto
+    transaction id.
+  </desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+    </marker>
+    <marker id="arrowdash" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8a8a8e"/>
+    </marker>
+  </defs>
+
+  <!-- traced estate -->
+  <rect x="14" y="14" width="660" height="392" rx="10" fill="none" stroke="var(--line)" stroke-dasharray="2 4"/>
+  <text x="28" y="36" font-size="11" font-family="ui-monospace,Menlo,monospace" fill="var(--ink-faint)">
+    DATADOG-INSTRUMENTED ESTATE — one trace, one tag scheme
+  </text>
+
+  <!-- browser -->
+  <g>
+    <rect x="34" y="60" width="150" height="62" rx="8" fill="var(--surface)" stroke="var(--red)" stroke-width="2"/>
+    <text x="46" y="84" font-size="13.5" font-weight="700" fill="var(--ink)">carto-web</text>
+    <text x="46" y="102" font-size="11" fill="var(--ink-soft)">React · RUM + Replay</text>
+    <text x="46" y="116" font-size="10.5" font-family="ui-monospace,Menlo,monospace" fill="var(--blue)">usr.id · context.txn_id</text>
+  </g>
+
+  <!-- bff -->
+  <g>
+    <rect x="248" y="60" width="176" height="62" rx="8" fill="var(--surface)" stroke="var(--red)" stroke-width="2"/>
+    <text x="260" y="84" font-size="13.5" font-weight="700" fill="var(--ink)">carto-storefront</text>
+    <text x="260" y="102" font-size="11" fill="var(--ink-soft)">Node BFF · mints txn_id</text>
+    <text x="260" y="116" font-size="10.5" font-family="ui-monospace,Menlo,monospace" fill="var(--blue)">X-Carto-Txn-Id →</text>
+  </g>
+
+  <!-- catalogue -->
+  <g>
+    <rect x="490" y="46" width="166" height="56" rx="8" fill="var(--surface)" stroke="var(--line)"/>
+    <text x="502" y="68" font-size="13" font-weight="700" fill="var(--ink)">carto-catalogue</text>
+    <text x="502" y="86" font-size="10.5" fill="var(--ink-soft)">range · search · stock</text>
+  </g>
+  <!-- checkout -->
+  <g>
+    <rect x="490" y="118" width="166" height="56" rx="8" fill="var(--surface)" stroke="var(--line)"/>
+    <text x="502" y="140" font-size="13" font-weight="700" fill="var(--ink)">carto-checkout</text>
+    <text x="502" y="158" font-size="10.5" fill="var(--ink-soft)">payment · order_id</text>
+  </g>
+  <!-- joy -->
+  <g>
+    <rect x="490" y="190" width="166" height="56" rx="8" fill="var(--surface)" stroke="var(--line)"/>
+    <text x="502" y="212" font-size="13" font-weight="700" fill="var(--ink)">carto-joy</text>
+    <text x="502" y="230" font-size="10.5" fill="var(--ink-soft)">LLM Obs · groundedness</text>
+  </g>
+  <!-- fulfilment -->
+  <g>
+    <rect x="490" y="262" width="166" height="56" rx="8" fill="var(--surface)" stroke="var(--navy)" stroke-width="2"/>
+    <text x="502" y="284" font-size="13" font-weight="700" fill="var(--ink)">carto-fulfilment</text>
+    <text x="502" y="302" font-size="10.5" fill="var(--ink-soft)">hand-off (traced)</text>
+  </g>
+  <!-- postgres -->
+  <g>
+    <rect x="248" y="318" width="176" height="62" rx="8" fill="var(--surface)" stroke="var(--line)"/>
+    <text x="260" y="342" font-size="13" font-weight="700" fill="var(--ink)">carto-postgres</text>
+    <text x="260" y="358" font-size="10.5" fill="var(--ink-soft)">DBM · orders · products</text>
+    <text x="260" y="372" font-size="10.5" font-family="ui-monospace,Menlo,monospace" fill="var(--blue)">transaction_ledger</text>
+  </g>
+  <!-- load -->
+  <g>
+    <rect x="34" y="318" width="150" height="62" rx="8" fill="var(--sunken)" stroke="var(--line)"/>
+    <text x="46" y="342" font-size="13" font-weight="700" fill="var(--ink)">carto-load</text>
+    <text x="46" y="358" font-size="10.5" fill="var(--ink-soft)">Puppeteer journeys</text>
+  </g>
+
+  <!-- agent -->
+  <g>
+    <rect x="712" y="60" width="236" height="120" rx="8" fill="var(--surface)" stroke="var(--red)" stroke-width="2"/>
+    <text x="726" y="84" font-size="13.5" font-weight="700" fill="var(--ink)">Datadog Agent</text>
+    <text x="726" y="104" font-size="10.5" fill="var(--ink-soft)">APM :8126 · DogStatsD :8125</text>
+    <text x="726" y="120" font-size="10.5" fill="var(--ink-soft)">OTLP :4318 · container logs</text>
+    <text x="726" y="136" font-size="10.5" fill="var(--ink-soft)">DBM · CSM · process · NPM</text>
+    <text x="726" y="158" font-size="10.5" font-family="ui-monospace,Menlo,monospace" fill="var(--blue)">scoped to carto-* only</text>
+  </g>
+  <g>
+    <rect x="712" y="200" width="236" height="54" rx="8" fill="var(--sunken)" stroke="var(--line)"/>
+    <text x="726" y="222" font-size="12.5" font-weight="700" fill="var(--ink)">Synthetics private location</text>
+    <text x="726" y="240" font-size="10.5" fill="var(--ink-soft)">content-correctness + journey tests</text>
+  </g>
+
+  <!-- black box -->
+  <rect x="696" y="300" width="268" height="234" rx="10" fill="none" stroke="#8a8a8e" stroke-dasharray="4 4"/>
+  <text x="710" y="322" font-size="11" font-family="ui-monospace,Menlo,monospace" fill="#8a8a8e">
+    BLACK BOX — no tracer, no telemetry
+  </text>
+  <g>
+    <rect x="712" y="336" width="236" height="52" rx="8" fill="var(--sunken)" stroke="#8a8a8e"/>
+    <text x="726" y="357" font-size="12.5" font-weight="700" fill="var(--ink-soft)">WMS — manhattan-au</text>
+    <text x="726" y="374" font-size="10.5" fill="var(--ink-faint)">pick · pack</text>
+  </g>
+  <g>
+    <rect x="712" y="400" width="236" height="52" rx="8" fill="var(--sunken)" stroke="#8a8a8e"/>
+    <text x="726" y="421" font-size="12.5" font-weight="700" fill="var(--ink-soft)">Carrier — AusPost / StarTrack</text>
+    <text x="726" y="438" font-size="10.5" fill="var(--ink-faint)">collect · transit · deliver</text>
+  </g>
+  <g>
+    <rect x="712" y="464" width="236" height="52" rx="8" fill="var(--sunken)" stroke="#8a8a8e"/>
+    <text x="726" y="485" font-size="12.5" font-weight="700" fill="var(--ink-soft)">Store pick queue</text>
+    <text x="726" y="502" font-size="10.5" fill="var(--ink-faint)">click &amp; collect</text>
+  </g>
+
+  <g color="var(--red)" stroke="currentColor" stroke-width="1.6" fill="none" marker-end="url(#arrow)">
+    <path d="M 184 91 L 244 91"/>
+    <path d="M 424 85 L 486 74"/>
+    <path d="M 424 91 L 486 140"/>
+    <path d="M 424 100 L 486 214"/>
+    <path d="M 336 122 L 336 314"/>
+    <path d="M 573 174 L 573 258"/>
+    <path d="M 490 146 C 460 160 450 60 486 74" stroke-dasharray="0"/>
+    <path d="M 656 74 L 708 92"/>
+    <path d="M 424 349 L 486 300" stroke="var(--line)" color="var(--line)"/>
+    <path d="M 184 349 L 244 349" stroke="var(--line)" color="var(--line)"/>
+  </g>
+
+  <g stroke="#8a8a8e" stroke-width="1.5" fill="none" stroke-dasharray="5 4" marker-end="url(#arrowdash)">
+    <path d="M 656 290 L 710 360"/>
+    <path d="M 830 388 L 830 396"/>
+    <path d="M 830 452 L 830 460"/>
+    <path d="M 712 420 C 560 470 440 420 424 380"/>
+  </g>
+  <text x="430" y="452" font-size="10.5" font-family="ui-monospace,Menlo,monospace" fill="#8a8a8e">
+    stage events land later, joined by txn_id only
+  </text>
+</svg>
+  </div>
+</section>
+
+<section>
+  <h2>Services</h2>
+  <p class="muted">Ports are the host ports Compose publishes. Under Kubernetes every
+  service listens on :8080 inside the cluster and only the storefront is exposed, through
+  the ingress &mdash; so reach the others with <code>kubectl port-forward</code> there.</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Service</th><th>Runtime</th><th>Port <span class="portnote">(Compose host)</span></th><th>Owns</th><th>Failure it stages</th></tr></thead>
+      <tbody>
+        <tr><td><code>carto-web</code></td><td>React 18 + Vite, nginx</td><td>5175</td><td>Storefront, bag, checkout UI, the <a href="/track">tracking page</a>, telemetry inspector. RUM + Session Replay, manual views, <code>usr.id</code> and <code>txn_id</code> in global context.</td><td>Client-side error on the empty new-range shelf</td></tr>
+        <tr><td><code>carto-storefront</code></td><td>Node 20 + Express, dd-trace</td><td>8091</td><td>Sessions, catalogue proxy, bag, checkout orchestration, <code>/api/track</code>, Joy proxy, demo control plane. Mints <code>txn_id</code>.</td><td>Regressed express-checkout reprice, behind a flag cohort</td></tr>
+        <tr><td><code>carto-catalogue</code></td><td>Python 3.9 + FastAPI, ddtrace</td><td>8021</td><td>Range, search, product detail, inventory reservation with real row locks.</td><td>New range not published; inventory lock contention</td></tr>
+        <tr><td><code>carto-checkout</code></td><td>Python 3.12 + FastAPI, ddtrace</td><td>8022</td><td>Card authorisation, order creation, <code>order_id</code>, hand-off to fulfilment.</td><td>Card gateway degraded per fulfilment method or state; peak latency</td></tr>
+        <tr><td><code>carto-fulfilment</code></td><td>Python 3.12 + FastAPI, ddtrace</td><td>8023</td><td>The traced hand-off, plus an async worker that advances warehouse and carrier stages with no trace context.</td><td>Carrier feed goes silent — orders stall with nothing erroring</td></tr>
+        <tr><td><code>carto-guardrails</code></td><td>Python 3.12 + FastAPI, ddtrace</td><td>8025</td><td>Six-pillar evaluator for every agent action. Fails closed. Owns <code>agent_actions</code>, <code>guardrail_decisions</code>, <code>approval_requests</code>, <code>agent_spend</code> and <code>agent_scopes</code>.</td><td>Denials by pillar; evidence gaps; approvals expiring unanswered</td></tr>
+        <tr><td><code>carto-joy</code></td><td>Python 3.12 + Anthropic SDK</td><td>8024</td><td>Grounded order assistant. LLM Observability via ddtrace auto-instrumentation — see <em>Joy — how deeply the AI is actually wired in</em> above.</td><td>Prompt-injection attempts; ungrounded answers</td></tr>
+        <tr><td><code>carto-postgres</code></td><td>Postgres 16</td><td>internal</td><td>Range, orders, shipments and <code>transaction_ledger</code>. DBM with <code>pg_stat_statements</code>, <code>auto_explain</code> and schema collection.</td><td>Lock waits under the peak-trade scenario</td></tr>
+        <tr><td><code>carto-load</code></td><td>Node + Puppeteer</td><td>—</td><td>Real browser journeys: browse → sign in → bag → checkout → track by txn id and by order number.</td><td>—</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    The catalogue deliberately runs an end-of-life Python 3.9 / Debian bullseye base image while the
+    other services run current ones, so Vulnerability Management shows a mix rather than a uniformly
+    red stack. That is intentional — do not "fix" it.
+  </p>
+</section>
+
+<section>
+  <h2>Joy — how deeply the AI is actually wired in</h2>
+  <p>
+    The question a GM asks about an AI surface is not "is it up" — it is <em>how much of the
+    business does it touch, and can you see what it did</em>. Joy is deliberately built at a
+    realistic depth: it reads live order state, it is on the same trace and the same identifiers as
+    the commerce path, and it may act on an order <em>only</em> through a guardrail evaluator that
+    runs outside it. Everything below is what the harness actually does, including the limits.
+    The six pillars that govern those actions are the next section.
+  </p>
+
+  <div class="diagram">
+<svg viewBox="0 0 980 470" role="img" aria-labelledby="joytitle joydesc" style="width:100%;height:auto">
+  <title id="joytitle">Joy assistant integration</title>
+  <desc id="joydesc">
+    The browser calls the storefront BFF, which proxies to the Joy service. Joy reads the
+    customer's order and shipment rows from Postgres to build a grounding context block, calls the
+    Anthropic API, and returns an answer. ddtrace captures an APM span and an LLM Observability
+    span; both carry the Carto customer, order and transaction ids. Joy's only write path runs
+    through the carto-guardrails evaluator, which must allow all six pillars before it may act.
+  </desc>
+  <defs>
+    <marker id="jarrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+    </marker>
+    <marker id="jblock" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 5 0 L 5 10" stroke="#c0202f" stroke-width="2.5" fill="none"/>
+    </marker>
+  </defs>
+
+  <!-- request path -->
+  <g>
+    <rect x="18" y="40" width="150" height="58" rx="8" fill="var(--surface)" stroke="var(--red)" stroke-width="2"/>
+    <text x="30" y="63" font-size="13" font-weight="700" fill="var(--ink)">carto-web</text>
+    <text x="30" y="80" font-size="10.5" fill="var(--ink-soft)">/joy chat · RUM action</text>
+    <text x="30" y="93" font-size="10" font-family="ui-monospace,Menlo,monospace" fill="var(--blue)">usr.id set</text>
+  </g>
+  <g>
+    <rect x="212" y="40" width="168" height="58" rx="8" fill="var(--surface)" stroke="var(--red)" stroke-width="2"/>
+    <text x="224" y="63" font-size="13" font-weight="700" fill="var(--ink)">carto-storefront</text>
+    <text x="224" y="80" font-size="10.5" fill="var(--ink-soft)">POST /api/joy (proxy)</text>
+    <text x="224" y="93" font-size="10" font-family="ui-monospace,Menlo,monospace" fill="var(--blue)">X-Carto-* headers →</text>
+  </g>
+  <g>
+    <rect x="424" y="30" width="176" height="78" rx="8" fill="var(--surface)" stroke="var(--navy)" stroke-width="2"/>
+    <text x="436" y="53" font-size="13" font-weight="700" fill="var(--ink)">carto-joy</text>
+    <text x="436" y="70" font-size="10.5" fill="var(--ink-soft)">grounding + guardrails</text>
+    <text x="436" y="85" font-size="10.5" fill="var(--ink-soft)">ddtrace + LLM Obs</text>
+    <text x="436" y="100" font-size="10" font-family="ui-monospace,Menlo,monospace" fill="var(--blue)">ml_app: carto-joy</text>
+  </g>
+  <g>
+    <rect x="660" y="30" width="300" height="78" rx="8" fill="var(--sunken)" stroke="#8a8a8e" stroke-dasharray="4 4"/>
+    <text x="674" y="53" font-size="13" font-weight="700" fill="var(--ink-soft)">Anthropic API (external)</text>
+    <text x="674" y="70" font-size="10.5" fill="var(--ink-faint)">claude-haiku-4-5 · max_tokens 180</text>
+    <text x="674" y="87" font-size="10.5" fill="var(--ink-faint)">auto-instrumented SDK — prompt, completion,</text>
+    <text x="674" y="100" font-size="10.5" fill="var(--ink-faint)">tokens and latency captured as an LLM span</text>
+  </g>
+
+  <!-- grounding -->
+  <g>
+    <rect x="424" y="170" width="176" height="74" rx="8" fill="var(--surface)" stroke="var(--line)"/>
+    <text x="436" y="192" font-size="12.5" font-weight="700" fill="var(--ink)">carto-postgres</text>
+    <text x="436" y="209" font-size="10.5" fill="var(--ink-soft)">orders + fulfilment_shipments</text>
+    <text x="436" y="224" font-size="10.5" fill="var(--ink-soft)">SELECT … LIMIT 1 (read only)</text>
+    <text x="436" y="238" font-size="10" font-family="ui-monospace,Menlo,monospace" fill="var(--blue)">by customer / order / txn id</text>
+  </g>
+  <text x="608" y="196" font-size="10.5" font-family="ui-monospace,Menlo,monospace" fill="var(--ink-soft)">ORDER FACTS block →</text>
+  <text x="608" y="212" font-size="10.5" font-family="ui-monospace,Menlo,monospace" fill="var(--ink-soft)">the only facts the model</text>
+  <text x="608" y="226" font-size="10.5" font-family="ui-monospace,Menlo,monospace" fill="var(--ink-soft)">is permitted to use</text>
+
+  <!-- write path, gated -->
+  <g>
+    <rect x="212" y="300" width="388" height="62" rx="8" fill="var(--surface)" stroke="#c0202f" stroke-dasharray="5 4"/>
+    <text x="226" y="318" font-size="12.5" font-weight="700" fill="#c0202f">Write path only via carto-guardrails</text>
+    <text x="226" y="334" font-size="10.5" fill="var(--ink-soft)">Joy may refund, cancel or re-address an order — but ONLY after all six</text>
+    <text x="226" y="347" font-size="10.5" fill="var(--ink-soft)">pillars allow it. It asks an evaluator it does not control, and fails</text>
+    <text x="226" y="360" font-size="10.5" fill="var(--ink-soft)">closed: if the evaluator is unreachable, Joy refuses to act.</text>
+  </g>
+
+  <!-- datadog -->
+  <g>
+    <rect x="660" y="170" width="300" height="192" rx="8" fill="var(--surface)" stroke="var(--red)" stroke-width="2"/>
+    <text x="674" y="192" font-size="13" font-weight="700" fill="var(--ink)">What Datadog gets per turn</text>
+    <text x="674" y="213" font-size="10.5" fill="var(--ink-soft)">APM span  POST /ask, with carto.txn_id,</text>
+    <text x="674" y="226" font-size="10.5" fill="var(--ink-soft)">carto.order_id, carto.customer_id, usr.id</text>
+    <text x="674" y="245" font-size="10.5" fill="var(--ink-soft)">LLM span  prompt, completion, model,</text>
+    <text x="674" y="258" font-size="10.5" fill="var(--ink-soft)">input/output tokens, latency, error</text>
+    <text x="674" y="277" font-size="10.5" fill="var(--ink-soft)">Span tags  joy.grounded, joy.model,</text>
+    <text x="674" y="290" font-size="10.5" fill="var(--ink-soft)">joy.prompt_injection_suspected, token counts</text>
+    <text x="674" y="309" font-size="10.5" fill="var(--ink-soft)">Metrics  carto.joy.ask (by result / grounded /</text>
+    <text x="674" y="322" font-size="10.5" fill="var(--ink-soft)">injection), .ask.duration, .tokens.input/output</text>
+    <text x="674" y="341" font-size="10.5" fill="var(--ink-soft)">Logs  one JSON record per turn, same ids,</text>
+    <text x="674" y="354" font-size="10.5" fill="var(--ink-soft)">trace-correlated</text>
+  </g>
+
+  <g color="var(--red)" stroke="currentColor" stroke-width="1.6" fill="none" marker-end="url(#jarrow)">
+    <path d="M 168 69 L 208 69"/>
+    <path d="M 380 69 L 420 69"/>
+    <path d="M 600 69 L 656 69"/>
+  </g>
+  <g color="var(--navy)" stroke="currentColor" stroke-width="1.5" fill="none" marker-end="url(#jarrow)">
+    <path d="M 512 108 L 512 166"/>
+  </g>
+  <g stroke="#c0202f" stroke-width="1.6" fill="none" marker-end="url(#jblock)">
+    <path d="M 470 244 L 470 296"/>
+  </g>
+  <g color="var(--red)" stroke="currentColor" stroke-width="1.3" fill="none" stroke-dasharray="3 3" marker-end="url(#jarrow)">
+    <path d="M 600 180 L 656 200"/>
+  </g>
+</svg>
+  </div>
+
+  <h3>Integration depth, honestly</h3>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Dimension</th><th>What Joy actually has</th><th>Why it matters in the room</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>Identity</strong></td>
+          <td>Every turn carries <code>carto.customer_id</code>, <code>carto.order_id</code>,
+              <code>carto.txn_id</code> and <code>usr.id</code> — the same values on the checkout
+              trace, propagated from the browser through the BFF in <code>X-Carto-*</code> headers.</td>
+          <td>A conversation is joinable to the order it was about. "Which customers asked about the
+              orders that stalled?" is a query, not a project.</td>
+        </tr>
+        <tr>
+          <td><strong>Data access</strong></td>
+          <td>Read-only <code>SELECT</code> against <code>orders</code> joined to
+              <code>fulfilment_shipments</code>, resolved by customer, order or transaction id.
+              Returns status, total, fulfilment method, store, carrier, consignment number, stage
+              and ETA for the most recent order.</td>
+          <td>The assistant answers from live commerce state, not a stale knowledge base — so the AI
+              conversation is a data-integration conversation, which is the one they actually need
+              to have.</td>
+        </tr>
+        <tr>
+          <td><strong>Grounding</strong></td>
+          <td>Those rows are rendered into an <code>ORDER FACTS</code> block and the system prompt
+              forbids using anything else, inventing a status, a date, a refund or a discount code.
+              The span records <code>joy.grounded=true|false</code>, and a turn with no matching
+              order is answered as "I will need to check".</td>
+          <td>Groundedness becomes an observable property with a tag you can group by — the
+              difference between hoping the model behaved and being able to show it.</td>
+        </tr>
+        <tr>
+          <td><strong>Write authority</strong></td>
+          <td><strong>Governed.</strong> Joy may refund, cancel or re-address an order via
+              <code>POST /act</code>, but every attempt is evaluated by <code>carto-guardrails</code>
+              against six pillars first. Joy holds no scope for a price override at all, and it
+              still has no direct HTTP client to checkout or fulfilment.</td>
+          <td>This is the rung the governance question actually lives on: the AI has moved from
+              rung three (it explains) to rung four (it acts), and the thing that makes that
+              defensible is not trust, it is an evaluator the agent does not own, writing an
+              audit trail the agent cannot edit. See the next section.</td>
+        </tr>
+        <tr>
+          <td><strong>Adversarial input</strong></td>
+          <td>Inbound messages are checked for injection patterns before the call; matches set
+              <code>joy.prompt_injection_suspected=true</code> and increment a tagged metric.
+              Roughly 15% of driver traffic is deliberately hostile — refund-code extraction,
+              system-prompt dumps, forced delivery confirmations — and the system prompt instructs
+              the model never to follow instructions arriving inside a customer message.</td>
+          <td>Gives <code>[Carto] Joy assistant — prompt injection attempts</code> real span content
+              to open, and turns AI Guard into a control conversation rather than a scare.</td>
+        </tr>
+        <tr>
+          <td><strong>Cost</strong></td>
+          <td>Input and output tokens recorded per turn as histograms tagged by model, plus the
+              same numbers on the span. Model, max_tokens and driver interval are all
+              environment-controlled.</td>
+          <td>Cost per conversation is attributable to a customer and a transaction — the basis for
+              "what is this assistant worth per order".</td>
+        </tr>
+        <tr>
+          <td><strong>Failure behaviour</strong></td>
+          <td>No API key → the service boots, serves 200s with <code>degraded:true</code> and logs a
+              warning, so the rest of the stack is unaffected. A model error → errored span,
+              <code>JoyModelError</code> on the trace, HTTP 502 to the BFF, and the chat UI degrades
+              to pointing at the order tracking page.</td>
+          <td>The AI surface failing does not take the storefront with it — which is exactly the
+              blast-radius question asked about any assistant bolted onto a commerce path.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Where it sits relative to the rest of the estate</h3>
+  <p>
+    Joy is a first-class service in this architecture, not a side-car: it is in the Software Catalog
+    as <code>carto-joy</code> under the <code>carto-digital-commerce</code> system, carries the same
+    universal tags (<code>business_unit</code>, <code>banner</code>, <code>channel</code>,
+    <code>region</code>), appears on the service map with its Postgres dependency, and its logs and
+    metrics land in the same indexes as the commerce services. The only thing that distinguishes it
+    is the extra signal — LLM Observability — layered on top of the APM span it would have had
+    anyway.
+  </p>
+  <p>
+    The gap worth naming to Carto: the assistant reads the commerce state but cannot act on it, and
+    the fulfilment systems it is answering questions <em>about</em> emit no telemetry of their own.
+    So when a customer asks Joy "where is my order" and the order is stalled in the black box, the
+    only reason Joy can answer at all is the ledger keyed on <code>txn_id</code>. The AI surface and
+    the tracking-id design are the same story told twice.
+  </p>
+</section>
+
+<section>
+  <h2>AI guardrails — the six pillars</h2>
+  <p>
+    Joy moving from "it explains" to "it acts" is the whole governance question. The answer this
+    harness implements is not <em>trust the model</em>; it is an evaluator the agent does not own,
+    checking six things in order, writing an audit trail the agent cannot edit. The evaluator runs
+    as its own service — <code>carto-guardrails</code> — precisely so that the deployment which
+    wants to act is not the one deciding whether acting is allowed.
+  </p>
+  <p>
+    Pillars run in order and <strong>fail closed</strong>: an exception inside a pillar is a deny,
+    never a skip, and an unreachable evaluator means Joy refuses to act rather than proceeding
+    optimistically. Each pillar emits its own span, metric and log line, so a refusal is visible in
+    Datadog as the pillar that caused it rather than one opaque boolean.
+  </p>
+
+  <table class="svctable">
+    <thead>
+      <tr><th>Pillar</th><th>The question it answers</th><th>How it is decided here</th>
+          <th>Telemetry it emits</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>1 Identity</strong></td>
+        <td>Who is acting, and can that be proven?</td>
+        <td>The agent presents a platform-issued attestation token. An action touching an order
+            also requires an authenticated human principal — asserted by the BFF from the session,
+            never by the browser.</td>
+        <td><code>guardrail.identity</code> span ·
+            <code>carto.guardrail.evaluations{pillar:identity}</code></td>
+      </tr>
+      <tr>
+        <td><strong>2 Authority</strong></td>
+        <td>Does this agent hold the scope for <em>this</em> action, at <em>this</em> value?</td>
+        <td>Scope grants live in the <code>agent_scopes</code> table, per action, with an optional
+            ceiling. Joy may refund to A$300 and may <em>never</em> override a price — seeded as
+            explicitly revoked rather than absent, so the pillar can say "revoked" not "unknown".</td>
+        <td><code>guardrail.authority</code> span ·
+            <code>carto.guardrail.denials{pillar:authority}</code></td>
+      </tr>
+      <tr>
+        <td><strong>3 Condition</strong></td>
+        <td>Are the business preconditions actually true right now?</td>
+        <td>The order exists, is in a state the action is meaningful in, and <strong>belongs to the
+            acting principal</strong> — the confused-deputy check. A refund on a cancelled order
+            and a refund on someone else's order both fail here.</td>
+        <td><code>guardrail.condition</code> span with the observed order state</td>
+      </tr>
+      <tr>
+        <td><strong>4 Human approval</strong></td>
+        <td>Is this big enough that a person must say yes?</td>
+        <td>Above <code>GUARDRAIL_APPROVAL_THRESHOLD_AUD</code> the action parks in
+            <code>approval_requests</code> and returns <em>pending</em>, which is not an allow. An
+            approval nobody answers <strong>expires, and expiry denies</strong>. Resuming after a
+            human approves reuses the same <code>action_id</code>, or the approval would be orphaned.</td>
+        <td><code>carto.guardrail.approval_decisions</code> ·
+            <code>carto.guardrail.approvals_expired</code></td>
+      </tr>
+      <tr>
+        <td><strong>5 Budget</strong></td>
+        <td>Has this agent session spent more than it is allowed?</td>
+        <td>Every model call reports its own cost to <code>/spend</code>, priced from the published
+            per-million-token rates, so the ceiling is enforced against real usage rather than a
+            per-call guess. Action value counts too.</td>
+        <td><code>carto.guardrail.budget_used_usd</code> gauge ·
+            <code>carto.guardrail.spend_events</code></td>
+      </tr>
+      <tr>
+        <td><strong>6 Evidence</strong></td>
+        <td>Can the decision be reconstructed afterwards?</td>
+        <td>The full pillar chain is hashed and persisted, and the action must carry a
+            <code>txn_id</code> or <code>order_id</code>. This pillar runs <em>even when an earlier
+            pillar already denied</em>, because a refusal must be auditable too. An action nobody
+            could audit is denied on principle.</td>
+        <td><code>guardrail.evidence</code> span carrying the SHA-256 of the decision chain</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>
+    <strong>Why Evidence is last and still runs on a denial.</strong> The first five pillars answer
+    <em>should this happen</em>. Evidence answers <em>will anyone be able to prove what happened</em>,
+    which is a different question and the one an auditor actually asks. It is also the pillar that
+    ties this section back to the rest of the harness: a trace id cannot carry an audit across the
+    fulfilment seam, because the warehouse and carrier run no tracer — so agent actions are joined
+    by the same non-Datadog <code>txn_id</code> the order path uses.
+  </p>
+  <p>
+    The kill switch (<code>GUARDRAIL_ENABLED=false</code>) exists so the same action can be shown
+    succeeding unguarded and refused guarded. Using it is logged as
+    <code>guardrail_decision:bypassed</code> and alerts at P1, because guardrails being off is
+    itself an audit finding.
+  </p>
+</section>
+
+<section>
+  <h2>How each signal gets to Datadog</h2>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Signal</th><th>Produced by</th><th>Transport</th><th>Carries the Carto ids?</th></tr></thead>
+      <tbody>
+        <tr><td>Traces</td><td>ddtrace (Python), dd-trace (Node), auto-instrumented</td><td>Agent APM intake on the compose network, <code>datadog-agent:8126</code></td><td>Yes — <code>carto.txn_id</code>, <code>carto.order_id</code>, <code>carto.customer_id</code>, <code>usr.id</code> on the ROOT span, not just the active one</td></tr>
+        <tr><td>Logs</td><td>App code, one JSON formatter for app and access logs</td><td>stdout → Agent container log collection</td><td>Yes — <code>txn_id</code>, <code>order_id</code>, <code>customer_id</code> plus <code>dd.trace_id</code> for correlation</td></tr>
+        <tr><td>Metrics</td><td>OpenTelemetry Metrics API in app code</td><td>OTel SDK → OTLP/HTTP → Agent OTLP receiver <code>:4318</code></td><td>No, by design — bounded dimensions only (<code>fulfilment_method</code>, <code>state</code>, <code>result</code>, <code>carrier</code>)</td></tr>
+        <tr><td>RUM + Session Replay</td><td>Browser SDK, manual views</td><td>Browser → Datadog intake (or same-origin <code>/dd-rum</code> after <code>make rum-unblock</code>)</td><td>Yes — <code>usr.id</code> and <code>@context.txn_id</code> / <code>@context.order_id</code></td></tr>
+        <tr><td>LLM Observability</td><td>ddtrace auto-instrumentation of the Anthropic SDK</td><td>Agent, non-agentless</td><td>Yes — same span tags as the order path</td></tr>
+        <tr><td>Database Monitoring</td><td>Agent postgres check via container labels</td><td>Agent</td><td>Query-level, joined to traces by the service tag</td></tr>
+        <tr><td>Synthetics</td><td>Private location worker on the compose network</td><td>Worker → Datadog</td><td>Yes — the journey test extracts the minted <code>txn_id</code> and asserts the transaction is reassemblable</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    Neither <code>dd-trace</code> nor <code>ddtrace</code> provides an OpenTelemetry
+    <em>MeterProvider</em>, so application metrics would silently no-op if the app simply called the
+    OTel metrics API. Each service registers an SDK MeterProvider pointed at the Agent's OTLP
+    receiver — which is why the receiver is enabled in plain agent mode, not just in a
+    collector-based setup.
+  </p>
+</section>
+
+<section>
+  <h2>The two ID systems, side by side</h2>
+  <div class="grid2">
+    <div class="callout">
+      <h3>What Datadog issues</h3>
+      <ul>
+        <li><strong>trace_id / span_id</strong> — created per request by the tracer.</li>
+        <li>Exists only where a tracer runs.</li>
+        <li>Unknown to the customer, the contact centre, the carrier and the WMS.</li>
+        <li>Perfect inside the estate: one click from session to trace to log to host.</li>
+      </ul>
+    </div>
+    <div class="callout callout--id">
+      <h3>What Carto issues</h3>
+      <ul>
+        <li><strong>customer_id</strong> <code>CT-CUST-1001</code> — stable per shopper, doubles as <code>usr.id</code>.</li>
+        <li><strong>order_id</strong> <code>CRT-20260929-4F7C21</code> — what the customer quotes.</li>
+        <li><strong>txn_id</strong> <code>CRTX-…</code> — one per checkout attempt, propagated in <code>X-Carto-Txn-Id</code>, persisted on every ledger hop.</li>
+        <li>Survives the seam: the only join between a browser session and a carrier consignment number.</li>
+      </ul>
+    </div>
+  </div>
+  <p>
+    <code>transaction_ledger</code> is where the two meet. Every hop written by an instrumented
+    service stores the Datadog trace id alongside the Carto ids, so the tracking page can offer
+    "open this hop in Datadog". Hops written by the black-box path store a carrier reference and
+    <em>no trace id at all</em> — and the page says so, rather than hiding the gap. The coverage
+    figure on <a href="/track">/track</a> (typically 7 traced of 12 hops) is that gap, measured.
+  </p>
+  <pre><code>-- what the stall monitor actually watches: the age of the last hop,
+-- per transaction, for orders that have not reached a terminal state
+SELECT o.order_id, o.txn_id, o.customer_id, MAX(l.created_at) AS last_hop
+  FROM transaction_ledger l
+  JOIN orders o ON o.txn_id = l.txn_id
+ WHERE o.status NOT IN ('delivered','ready_for_collection','failed')
+ GROUP BY o.order_id, o.txn_id, o.customer_id
+HAVING MAX(l.created_at) &lt; now() - interval '3 minutes';</code></pre>
+</section>
+
+<section>
+  <h2>Datadog assets this harness creates</h2>
+  <p>Everything is prefixed so the whole set is findable — and deletable — as a unit.</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Kind</th><th>Name</th><th>Why it exists</th></tr></thead>
+      <tbody>
+        <tr><td>Dashboard</td><td>Carto — Group Digital Executive Overview</td><td>Trade, customer experience, the two silent failure modes, fulfilment and Joy in one board-level view.</td></tr>
+        <tr><td>Dashboard</td><td>Carto — Order Journey &amp; Transaction Tracking</td><td>Template variables for <code>txn_id</code> / <code>order_id</code> / <code>customer_id</code>; spans, logs and RUM for one transaction.</td></tr>
+        <tr><td>Monitor</td><td>[Carto] New range published but not visible on the storefront</td><td>Content correctness. Fires on a 200.</td></tr>
+        <tr><td>Monitor</td><td>[Carto] Orders stalled past the fulfilment seam</td><td>The failure with no error. Watches ledger hop age.</td></tr>
+        <tr><td>Monitor</td><td>[Carto] Checkout failure rate above 5%</td><td>Journey-level health, split by method / state / flag.</td></tr>
+        <tr><td>Monitor</td><td>[Carto] Checkout p95 latency above 2s</td><td>Peak-trade contention.</td></tr>
+        <tr><td>Monitor</td><td>[Carto] Card authorisation errors by fulfilment method</td><td>Per-slice alerting — a rounding error in aggregate is an outage for one cohort.</td></tr>
+        <tr><td>Monitor</td><td>[Carto] Joy assistant — prompt injection attempts</td><td>AI Guard conversation, with real span content.</td></tr>
+        <tr><td>Monitor</td><td>[Carto] Transaction lookups returning nothing</td><td>Health of the tracking surface the contact centre depends on.</td></tr>
+        <tr><td>SLO</td><td>[Carto] Checkout success rate</td><td>Denominated in customer intent, not HTTP status.</td></tr>
+        <tr><td>SLO</td><td>[Carto] Order journey completion past the fulfilment seam</td><td>Only expressible because of the txn_id ledger.</td></tr>
+        <tr><td>SLO</td><td>[Carto] New range visible on the storefront</td><td>A correctness SLO.</td></tr>
+        <tr><td>Synthetic</td><td>[Carto] New range content correctness</td><td>Asserts on body content, not availability.</td></tr>
+        <tr><td>Synthetic</td><td>[Carto] Order journey end to end (with transaction tracking)</td><td>Six steps; the last two prove the transaction is reassemblable by txn id and by order number.</td></tr>
+        <tr><td>Synthetic</td><td>[Carto] Storefront availability</td><td>The baseline check that stays green through the content failure.</td></tr>
+        <tr><td>Catalog</td><td>carto-digital-commerce system + 7 entities</td><td>Ownership, dependencies and business tags agreeing with the service map.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <pre><code># push or refresh every asset above (idempotent — matches on name)
+./scripts/creds-from-env.sh ./scripts/dd-push.py all</code></pre>
+</section>
+
+<section>
+  <h2>Universal tag scheme</h2>
+  <p>
+    The segment that argues for one data model across stores, digital, Carto, Vantage and Kin needs
+    the harness to actually carry business tags, not just <code>env</code> and <code>service</code>.
+    The Agent stamps these on every signal it collects, and container labels add per-service tags on
+    top.
+  </p>
+  <pre><code>env:prd                      business_unit:carto-digital
+service:carto-*              banner:carto
+version:0.1.0                channel:digital
+team:carto-digital           region:anz
+harness:carto                tier:web|bff|backend|fulfilment|ai|db
+purpose:carto-demo           role:spa|rdbms|wms-gateway|rum-driver</code></pre>
+  <p>
+    <code>carto-fulfilment</code> deliberately carries <code>business_unit:carto-supply-chain</code>
+    rather than <code>carto-digital</code> — the seam in the tag scheme mirrors the seam in the
+    organisation, which is the honest version of the story.
+  </p>
+</section>
+
+<footer>
+  Datadog demo environment — not a Carto system. Representative demo data modelled on the public
+  carto.com.au range; no real customer or order data. See the
+  <a href="/demo-walkthrough.html">demo flow and run sheet</a> for how this is presented.
+</footer>
+
+</div>
+
+<script>
+// The storefront's host port differs by deployment -- 5175 under Compose, 8080
+// through the kind/GKE ingress -- so this page reports the origin it was
+// actually served from instead of asserting one. Opened as a file:// it keeps
+// the static fallback, which is all it can honestly say.
+(function () {
+  var el = document.getElementById('web-origin');
+  if (el && (location.protocol === 'http:' || location.protocol === 'https:')) {
+    el.textContent = location.host;
+  }
+})();
+</script>
+</body>
+</html>

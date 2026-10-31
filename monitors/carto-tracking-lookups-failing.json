@@ -1,0 +1,23 @@
+{
+  "name": "[Carto] Transaction lookups returning nothing",
+  "type": "query alert",
+  "query": "sum(last_15m):sum:carto.bff.track{env:prd,result:not_found}.as_count() / sum:carto.bff.track{env:prd}.as_count() * 100 > 25",
+  "message": "{{#is_alert}}\n**{{value}}% of transaction lookups are finding nothing.**\n\nThe tracking surface is what the contact centre uses when a customer quotes an order number, so a high miss rate means either the ledger is not being written or ids are being minted somewhere that does not persist them. Check `transaction_ledger` writes on the BFF and checkout services.\n{{/is_alert}}",
+  "tags": [
+    "surface:tracking",
+    "harness:carto",
+    "team:carto-digital",
+    "purpose:carto-demo",
+    "business_unit:carto-digital"
+  ],
+  "priority": 4,
+  "options": {
+    "notify_no_data": false,
+    "renotify_interval": 0,
+    "include_tags": true,
+    "thresholds": {
+      "critical": 25,
+      "warning": 10
+    }
+  }
+}

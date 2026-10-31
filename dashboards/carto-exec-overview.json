@@ -1,0 +1,806 @@
+{
+  "title": "Carto \u2014 Group Digital Executive Overview",
+  "description": "Board-level view of the Carto digital trading journey: orders, order value, checkout health, the two failure modes that produce no alert (new range not published, orders stalled past the fulfilment seam), and the Joy assistant. Created by the carto-demo harness.",
+  "layout_type": "ordered",
+  "reflow_type": "auto",
+  "template_variables": [
+    {
+      "name": "env",
+      "prefix": "env",
+      "available_values": [],
+      "default": "prd"
+    },
+    {
+      "name": "business_unit",
+      "prefix": "business_unit",
+      "available_values": [],
+      "default": "*"
+    },
+    {
+      "name": "fulfilment_method",
+      "prefix": "fulfilment_method",
+      "available_values": [],
+      "default": "*"
+    }
+  ],
+  "tags": [
+    "team:carto-digital"
+  ],
+  "widgets": [
+    {
+      "definition": {
+        "type": "note",
+        "content": "# Carto Group \u2014 Digital Trade\nBoard-level view of the online journey: what customers are doing, what it is worth, and whether the things that break silently are breaking. Every tile below is filtered by the universal tag scheme (`env`, `business_unit`, `banner`, `channel`), not by host.",
+        "background_color": "blue",
+        "font_size": "16",
+        "text_align": "left",
+        "vertical_align": "top",
+        "show_tick": false,
+        "has_padding": true
+      }
+    },
+    {
+      "definition": {
+        "title": "Trade \u2014 what the business is doing right now",
+        "type": "group",
+        "layout_type": "ordered",
+        "background_color": "vivid_blue",
+        "widgets": [
+          {
+            "definition": {
+              "title": "Orders paid (1h)",
+              "type": "query_value",
+              "precision": 0,
+              "autoscale": true,
+              "requests": [
+                {
+                  "queries": [
+                    {
+                      "data_source": "metrics",
+                      "name": "a",
+                      "query": "sum:carto.checkout.order{env:prd,result:paid}.as_count()",
+                      "aggregator": "sum"
+                    }
+                  ],
+                  "response_format": "scalar",
+                  "formulas": [
+                    {
+                      "formula": "a"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "title": "Order value (1h, AUD)",
+              "type": "query_value",
+              "precision": 0,
+              "autoscale": true,
+              "requests": [
+                {
+                  "queries": [
+                    {
+                      "data_source": "metrics",
+                      "name": "a",
+                      "query": "sum:carto.bff.order.value{env:prd}",
+                      "aggregator": "sum"
+                    }
+                  ],
+                  "response_format": "scalar",
+                  "formulas": [
+                    {
+                      "formula": "a"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "title": "Checkout failures (1h)",
+              "type": "query_value",
+              "precision": 0,
+              "autoscale": true,
+              "requests": [
+                {
+                  "queries": [
+                    {
+                      "data_source": "metrics",
+                      "name": "a",
+                      "query": "sum:carto.checkout.order{env:prd,!result:paid}.as_count()",
+                      "aggregator": "sum"
+                    }
+                  ],
+                  "response_format": "scalar",
+                  "formulas": [
+                    {
+                      "formula": "a"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "title": "Checkout success rate (%)",
+              "type": "query_value",
+              "precision": 2,
+              "autoscale": true,
+              "requests": [
+                {
+                  "queries": [
+                    {
+                      "data_source": "metrics",
+                      "name": "a",
+                      "query": "100 * sum:carto.checkout.order{env:prd,result:paid}.as_count() / sum:carto.checkout.order{env:prd}.as_count()",
+                      "aggregator": "avg"
+                    }
+                  ],
+                  "response_format": "scalar",
+                  "formulas": [
+                    {
+                      "formula": "a"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "title": "Orders by fulfilment method",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "queries": [
+                    {
+                      "data_source": "metrics",
+                      "name": "a",
+                      "query": "sum:carto.checkout.order{env:prd,result:paid} by {fulfilment_method}.as_count()"
+                    }
+                  ],
+                  "response_format": "timeseries",
+                  "formulas": [
+                    {
+                      "formula": "a"
+                    }
+                  ],
+                  "display_type": "bars"
+                }
+              ],
+              "show_legend": true,
+              "legend_layout": "auto",
+              "legend_columns": [
+                "avg",
+                "max",
+                "value"
+              ]
+            }
+          },
+          {
+            "definition": {
+              "title": "Order value by state (AUD)",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "queries": [
+                    {
+                      "data_source": "metrics",
+                      "name": "a",
+                      "query": "sum:carto.bff.order.value{env:prd} by {state}"
+                    }
+                  ],
+                  "response_format": "timeseries",
+                  "formulas": [
+                    {
+                      "formula": "a"
+                    }
+                  ],
+                  "display_type": "bars"
+                }
+              ],
+              "show_legend": true,
+              "legend_layout": "auto",
+              "legend_columns": [
+                "avg",
+                "max",
+                "value"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "Customer experience \u2014 the journey as the customer feels it",
+        "type": "group",
+        "layout_type": "ordered",
+        "background_color": "vivid_purple",
+        "widgets": [
+          {
+            "definition": {
+              "title": "Checkout latency p50 / p95 / p99 (BFF view)",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "queries": [
+                    {
+                      "data_source": "metrics",
+                      "name": "a",
+                      "query": "p50:carto.bff.checkout.duration{env:prd}"
+                    }
+                  ],
+                  "response_format": "timeseries",
+                  "formulas": [
+                    {
+                      "formula": "a",
+                      "alias": "p50"
+                    }
+                  ],
+                  "display_type": "line"
+                },
+                {
+                  "queries": [
+                    {
+                      "data_source": "metrics",
+                      "name": "a",
+                      "query": "p95:carto.bff.checkout.duration{env:prd}"
+                    }
+                  ],
+                  "response_format": "timeseries",
+                  "formulas": [
+                    {
+                      "formula": "a",
+                      "alias": "p95"
+                    }
+                  ],
+                  "display_type": "line"
+                },
+                {
+                  "queries": [
+                    {
+                      "data_source": "metrics",
+                      "name": "a",
+                      "query": "p99:carto.bff.checkout.duration{env:prd}"
+                    }
+                  ],
+                  "response_format": "timeseries",
+                  "formulas": [
+                    {
+                      "formula": "a",
+                      "alias": "p99"
+                    }
+                  ],
+                  "display_type": "line"
+                }
+              ],
+              "show_legend": true,
+              "legend_layout": "auto",
+              "legend_columns": [
+                "avg",
+                "max",
+                "value"
+              ]
+            }
+          },
+          {
+            "definition": {
+              "title": "Add to bag / browse volume",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "queries": [
+                    {
+                      "data_source": "metrics",
+                      "name": "a",
+                      "query": "sum:carto.bff.add_to_bag{env:prd}.as_count()"
+                    }
+                  ],
+                  "response_format": "timeseries",
+                  "formulas": [
+                    {
+                      "formula": "a",
+                      "alias": "add to bag"
+                    }
+                  ],
+                  "display_type": "bars"
+                },
+                {
+                  "queries": [
+                    {
+                      "data_source": "metrics",
+                      "name": "a",
+                      "query": "sum:carto.bff.browse{env:prd}.as_count()"
+                    }
+                  ],
+                  "response_format": "timeseries",
+                  "formulas": [
+                    {
+                      "formula": "a",
+                      "alias": "browse"
+                    }
+                  ],
+                  "display_type": "line"
+                }
+              ],
+              "show_legend": true,
+              "legend_layout": "auto",
+              "legend_columns": [
+                "avg",
+                "max",
+                "value"
+              ]
+            }
+          },
+          {
+            "definition": {
+              "title": "Checkout outcomes",
+              "type": "toplist",
+              "requests": [
+                {
+                  "queries": [
+                    {
+                      "data_source": "metrics",
+                      "name": "a",
+                      "query": "sum:carto.checkout.order{env:prd} by {result}.as_count()",
+                      "aggregator": "sum"
+                    }
+                  ],
+                  "response_format": "scalar",
+                  "formulas": [
+                    {
+                      "formula": "a"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "title": "Payment authorisation latency by method",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "queries": [
+                    {
+                      "data_source": "metrics",
+                      "name": "a",
+                      "query": "p95:carto.payments.authorise.duration{env:prd} by {fulfilment_method}"
+                    }
+                  ],
+                  "response_format": "timeseries",
+                  "formulas": [
+                    {
+                      "formula": "a"
+                    }
+                  ],
+                  "display_type": "line"
+                }
+              ],
+              "show_legend": true,
+              "legend_layout": "auto",
+              "legend_columns": [
+                "avg",
+                "max",
+                "value"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "The failures that do not alert",
+        "type": "group",
+        "layout_type": "ordered",
+        "background_color": "vivid_orange",
+        "widgets": [
+          {
+            "definition": {
+              "type": "note",
+              "content": "**Content correctness.** `carto.catalogue.new_range.published_count` is how many of this week's published products the storefront is actually serving. It should equal 6. When it is 0 every request is still a 200 \u2014 nothing is down, so nothing else here moves.",
+              "background_color": "yellow",
+              "font_size": "14",
+              "text_align": "left",
+              "vertical_align": "top",
+              "show_tick": false,
+              "has_padding": true
+            }
+          },
+          {
+            "definition": {
+              "title": "New-range products visible (should be 6)",
+              "type": "query_value",
+              "precision": 0,
+              "autoscale": true,
+              "requests": [
+                {
+                  "queries": [
+                    {
+                      "data_source": "metrics",
+                      "name": "a",
+                      "query": "avg:carto.catalogue.new_range.published_count{env:prd}",
+                      "aggregator": "last"
+                    }
+                  ],
+                  "response_format": "scalar",
+                  "formulas": [
+                    {
+                      "formula": "a"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "title": "Orders stalled in fulfilment (>3 min, no progress)",
+              "type": "query_value",
+              "precision": 0,
+              "autoscale": true,
+              "requests": [
+                {
+                  "queries": [
+                    {
+                      "data_source": "metrics",
+                      "name": "a",
+                      "query": "avg:carto.fulfilment.orders_stalled{env:prd}",
+                      "aggregator": "last"
+                    }
+                  ],
+                  "response_format": "scalar",
+                  "formulas": [
+                    {
+                      "formula": "a"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "title": "New-range visibility over time",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "queries": [
+                    {
+                      "data_source": "metrics",
+                      "name": "a",
+                      "query": "avg:carto.catalogue.new_range.published_count{env:prd}"
+                    }
+                  ],
+                  "response_format": "timeseries",
+                  "formulas": [
+                    {
+                      "formula": "a"
+                    }
+                  ],
+                  "display_type": "area"
+                }
+              ],
+              "show_legend": true,
+              "legend_layout": "auto",
+              "legend_columns": [
+                "avg",
+                "max",
+                "value"
+              ]
+            }
+          },
+          {
+            "definition": {
+              "title": "Orders stalled past the fulfilment seam",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "queries": [
+                    {
+                      "data_source": "metrics",
+                      "name": "a",
+                      "query": "avg:carto.fulfilment.orders_stalled{env:prd}"
+                    }
+                  ],
+                  "response_format": "timeseries",
+                  "formulas": [
+                    {
+                      "formula": "a"
+                    }
+                  ],
+                  "display_type": "area"
+                }
+              ],
+              "show_legend": true,
+              "legend_layout": "auto",
+              "legend_columns": [
+                "avg",
+                "max",
+                "value"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "Fulfilment \u2014 including the part Datadog cannot see",
+        "type": "group",
+        "layout_type": "ordered",
+        "background_color": "vivid_green",
+        "widgets": [
+          {
+            "definition": {
+              "title": "Shipments by stage",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "queries": [
+                    {
+                      "data_source": "metrics",
+                      "name": "a",
+                      "query": "avg:carto.fulfilment.shipments_in_stage{env:prd} by {stage}"
+                    }
+                  ],
+                  "response_format": "timeseries",
+                  "formulas": [
+                    {
+                      "formula": "a"
+                    }
+                  ],
+                  "display_type": "area"
+                }
+              ],
+              "show_legend": true,
+              "legend_layout": "auto",
+              "legend_columns": [
+                "avg",
+                "max",
+                "value"
+              ]
+            }
+          },
+          {
+            "definition": {
+              "title": "Stage transitions by carrier",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "queries": [
+                    {
+                      "data_source": "metrics",
+                      "name": "a",
+                      "query": "sum:carto.fulfilment.stage_transition{env:prd} by {carrier}.as_count()"
+                    }
+                  ],
+                  "response_format": "timeseries",
+                  "formulas": [
+                    {
+                      "formula": "a"
+                    }
+                  ],
+                  "display_type": "bars"
+                }
+              ],
+              "show_legend": true,
+              "legend_layout": "auto",
+              "legend_columns": [
+                "avg",
+                "max",
+                "value"
+              ]
+            }
+          },
+          {
+            "definition": {
+              "title": "Orders fulfilled (1h)",
+              "type": "query_value",
+              "precision": 0,
+              "autoscale": true,
+              "requests": [
+                {
+                  "queries": [
+                    {
+                      "data_source": "metrics",
+                      "name": "a",
+                      "query": "sum:carto.fulfilment.completed{env:prd}.as_count()",
+                      "aggregator": "sum"
+                    }
+                  ],
+                  "response_format": "scalar",
+                  "formulas": [
+                    {
+                      "formula": "a"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "title": "WMS hand-off latency p95",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "queries": [
+                    {
+                      "data_source": "metrics",
+                      "name": "a",
+                      "query": "p95:carto.fulfilment.dispatch.duration{env:prd} by {carrier}"
+                    }
+                  ],
+                  "response_format": "timeseries",
+                  "formulas": [
+                    {
+                      "formula": "a"
+                    }
+                  ],
+                  "display_type": "line"
+                }
+              ],
+              "show_legend": true,
+              "legend_layout": "auto",
+              "legend_columns": [
+                "avg",
+                "max",
+                "value"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "title": "Assistant (Joy) \u2014 the newest revenue surface",
+        "type": "group",
+        "layout_type": "ordered",
+        "background_color": "vivid_pink",
+        "widgets": [
+          {
+            "definition": {
+              "title": "Joy turns (1h)",
+              "type": "query_value",
+              "precision": 0,
+              "autoscale": true,
+              "requests": [
+                {
+                  "queries": [
+                    {
+                      "data_source": "metrics",
+                      "name": "a",
+                      "query": "sum:carto.joy.ask{env:prd}.as_count()",
+                      "aggregator": "sum"
+                    }
+                  ],
+                  "response_format": "scalar",
+                  "formulas": [
+                    {
+                      "formula": "a"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "title": "Prompt-injection attempts flagged (1h)",
+              "type": "query_value",
+              "precision": 0,
+              "autoscale": true,
+              "requests": [
+                {
+                  "queries": [
+                    {
+                      "data_source": "metrics",
+                      "name": "a",
+                      "query": "sum:carto.joy.ask{env:prd,injection_suspected:true}.as_count()",
+                      "aggregator": "sum"
+                    }
+                  ],
+                  "response_format": "scalar",
+                  "formulas": [
+                    {
+                      "formula": "a"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "title": "Joy turn latency p95",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "queries": [
+                    {
+                      "data_source": "metrics",
+                      "name": "a",
+                      "query": "p95:carto.joy.ask.duration{env:prd}"
+                    }
+                  ],
+                  "response_format": "timeseries",
+                  "formulas": [
+                    {
+                      "formula": "a"
+                    }
+                  ],
+                  "display_type": "line"
+                }
+              ],
+              "show_legend": true,
+              "legend_layout": "auto",
+              "legend_columns": [
+                "avg",
+                "max",
+                "value"
+              ]
+            }
+          },
+          {
+            "definition": {
+              "title": "Joy tokens in / out",
+              "type": "timeseries",
+              "requests": [
+                {
+                  "queries": [
+                    {
+                      "data_source": "metrics",
+                      "name": "a",
+                      "query": "sum:carto.joy.tokens.input{env:prd}"
+                    }
+                  ],
+                  "response_format": "timeseries",
+                  "formulas": [
+                    {
+                      "formula": "a",
+                      "alias": "input tokens"
+                    }
+                  ],
+                  "display_type": "bars"
+                },
+                {
+                  "queries": [
+                    {
+                      "data_source": "metrics",
+                      "name": "a",
+                      "query": "sum:carto.joy.tokens.output{env:prd}"
+                    }
+                  ],
+                  "response_format": "timeseries",
+                  "formulas": [
+                    {
+                      "formula": "a",
+                      "alias": "output tokens"
+                    }
+                  ],
+                  "display_type": "bars"
+                }
+              ],
+              "show_legend": true,
+              "legend_layout": "auto",
+              "legend_columns": [
+                "avg",
+                "max",
+                "value"
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

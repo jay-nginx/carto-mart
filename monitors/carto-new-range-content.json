@@ -1,0 +1,23 @@
+{
+  "name": "[Carto] New range published but not visible on the storefront",
+  "type": "metric alert",
+  "query": "min(last_5m):avg:carto.catalogue.new_range.published_count{env:prd} < 6",
+  "message": "{{#is_alert}}\n**The storefront is serving {{value}} of 6 products the buying team published for this trade week.**\n\nNothing is down. Every catalogue request is returning 200, latency is flat and the error rate is zero \u2014 the core range renders perfectly and only the new range is missing. No availability monitor in any tool will fire on this, which is why it is detected on CONTENT instead.\n\nRevenue impact is immediate and silent: the products being promoted this week cannot be bought.\n\nCheck: `GET /api/new-range` on the storefront, then the publish job for the current range week.\n{{/is_alert}}\n{{#is_recovery}}New range is fully visible again ({{value}} of 6).{{/is_recovery}}",
+  "tags": [
+    "failure_mode:content_correctness",
+    "alert_class:silent_revenue_loss",
+    "harness:carto",
+    "team:carto-digital",
+    "purpose:carto-demo",
+    "business_unit:carto-digital"
+  ],
+  "priority": 2,
+  "options": {
+    "notify_no_data": false,
+    "renotify_interval": 0,
+    "include_tags": true,
+    "thresholds": {
+      "critical": 6
+    }
+  }
+}

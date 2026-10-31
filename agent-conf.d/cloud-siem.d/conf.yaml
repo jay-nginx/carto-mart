@@ -1,0 +1,61 @@
+# Cloud SIEM — log collection of files Cloud SIEM detection rules
+# typically run against. Enabled as part of the boilerplate so any new
+# harness ships them by default. Files that don't exist on a given host
+# are silently skipped by the agent (no errors).
+#
+# Coverage:
+#   /var/log/auth.log     — authentication events (login, sudo, ssh)
+#   /var/log/syslog       — general system events
+#   /var/log/audit/audit.log — auditd audit trail (if installed)
+#   /var/log/kern.log     — kernel messages
+#   /var/log/dpkg.log     — package install/remove (Debian-family)
+#   /var/log/secure       — RHEL-style auth log (Debian uses auth.log instead)
+#   /var/log/cron.log     — scheduled job execution (CentOS/Debian)
+#
+# Backend behavior:
+#   - lima-vm: agent reads these directly. Default Ubuntu 24.04 image
+#     populates auth.log + syslog + kern.log; auditd and others appear
+#     only if installed.
+#   - container (Compose on Colima): agent doesn't see the host's
+#     /var/log unless explicitly mounted. We don't auto-mount because
+#     (a) Colima's Lima VM is minimal and most of these files are empty
+#         or absent, and (b) the container's own /var/log is rarely
+#         interesting. To collect host security logs in container mode,
+#         add a `/var/log:/host/var/log:ro` mount to the agent service
+#         and adjust the paths below to /host/var/log/<file>.
+
+init_config:
+
+logs:
+  - type: file
+    path: /var/log/auth.log
+    source: auth
+    service: cloud-siem
+    log_processing_rules:
+      - type: multi_line
+        name: timestamp_iso
+        pattern: '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}'
+  - type: file
+    path: /var/log/syslog
+    source: syslog
+    service: cloud-siem
+  - type: file
+    path: /var/log/audit/audit.log
+    source: linux-audit
+    service: cloud-siem
+  - type: file
+    path: /var/log/kern.log
+    source: kernel
+    service: cloud-siem
+  - type: file
+    path: /var/log/dpkg.log
+    source: dpkg
+    service: cloud-siem
+  - type: file
+    path: /var/log/secure
+    source: auth
+    service: cloud-siem
+  - type: file
+    path: /var/log/cron.log
+    source: cron
+    service: cloud-siem

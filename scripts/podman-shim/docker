@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# docker(1) shim for running this harness on Podman.
+#
+# WHY THIS EXISTS
+# The harness was written against Docker Desktop and calls `docker compose`
+# (the CLI *plugin* form) from the Makefile, stack.sh and doctor.sh. Podman
+# ships no such plugin: compose lives as the standalone `docker-compose`
+# binary. Rather than rewrite every call site — and leave the harness only
+# runnable on Podman — this shim translates the one subcommand that differs
+# and hands everything else to podman, whose CLI is argument-compatible for
+# inspect/ps/run/logs/exec, the only other verbs the harness uses.
+set -euo pipefail
+
+PODMAN="${PODMAN_BIN:-/opt/podman/bin/podman}"
+COMPOSE="${COMPOSE_BIN:-/usr/local/bin/docker-compose}"
+
+if [[ "${1:-}" == "compose" ]]; then
+  shift
+  exec "$COMPOSE" "$@"
+fi
+exec "$PODMAN" "$@"

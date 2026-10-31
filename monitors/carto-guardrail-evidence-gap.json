@@ -1,0 +1,24 @@
+{
+  "name": "[Carto] Agent action taken without a complete audit trail",
+  "type": "log alert",
+  "query": "logs(\"service:carto-guardrails @pillar:evidence @guardrail_decision:deny\").index(\"*\").rollup(\"count\").last(\"30m\") > 0",
+  "priority": 1,
+  "tags": [
+    "harness:carto",
+    "team:carto-digital",
+    "purpose:carto-demo",
+    "business_unit:carto-digital",
+    "failure_mode:evidence_gap",
+    "surface:ai-governance"
+  ],
+  "message": "{{#is_alert}}\n**An agent action could not be fully evidenced.**\n\nThe Evidence pillar refused {{value}} action(s) in the last 30 minutes because the decision chain could not be written down completely, or because the action carried no `txn_id`/`order_id` to join it to a business transaction.\n\nThis is P1 and not informational. Every other pillar answers *should this happen*; Evidence answers *will anyone be able to prove what happened*. A gap here means an auditor cannot reconstruct the decision, and the fulfilment seam has no tracer to fall back on.\n\n- Logs: `service:carto-guardrails @pillar:evidence @guardrail_decision:deny`\n- The action row: `agent_actions` where `decision` is set but pillars are incomplete\n{{/is_alert}}\n{{#is_recovery}}\nEvidence is complete again.\n{{/is_recovery}}",
+  "options": {
+    "thresholds": {
+      "critical": 0
+    },
+    "notify_no_data": false,
+    "renotify_interval": 60,
+    "include_tags": true,
+    "enable_logs_sample": true
+  }
+}

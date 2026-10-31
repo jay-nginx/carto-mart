@@ -1,0 +1,28 @@
+{
+  "name": "[Carto] New range visible on the storefront",
+  "description": "Share of content checks where every product published for the current trade week is actually being served. A correctness SLO rather than an availability one \u2014 the failure it measures returns 200 on every request.",
+  "type": "metric",
+  "query": {
+    "numerator": "sum:carto.catalogue.new_range.check{env:prd,result:complete}.as_count()",
+    "denominator": "sum:carto.catalogue.new_range.check{env:prd}.as_count()"
+  },
+  "thresholds": [
+    {
+      "timeframe": "7d",
+      "target": 99.9,
+      "warning": 99.95
+    },
+    {
+      "timeframe": "30d",
+      "target": 99.9,
+      "warning": 99.95
+    }
+  ],
+  "tags": [
+    "harness:carto",
+    "team:carto-digital",
+    "purpose:carto-demo",
+    "business_unit:carto-digital",
+    "slo:content_correctness"
+  ]
+}

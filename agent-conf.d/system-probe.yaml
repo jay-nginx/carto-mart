@@ -1,0 +1,70 @@
+# /etc/datadog-agent/system-probe.yaml
+#
+# Datadog system-probe drives several DD products that need kernel-level
+# visibility (eBPF, /proc, /sys/kernel/debug). Shipped as boilerplate so
+# the configs are in place; only ACTIVATES when DD_SYSTEM_PROBE_ENABLED=true
+# in carto.env (default false). Until then, system-probe doesn't start and
+# this file has no effect.
+#
+# Products enabled here:
+#   - Cloud Network Monitoring (CNM, formerly NPM) — flow-level network
+#     observability + DNS + per-pod/container traffic
+#   - Universal Service Monitoring (USM) — language-agnostic service
+#     detection from network traffic (HTTP, HTTPS, gRPC, Postgres, ...)
+#     without requiring code instrumentation
+#
+# Backend caveats:
+#   - lima-vm: works cleanly when system-probe is enabled. install_script
+#     installs system-probe + kernel headers automatically.
+#   - container (Compose on Colima): needs the agent container to run
+#     privileged + extra capabilities (SYS_ADMIN, SYS_RESOURCE, NET_ADMIN,
+#     IPC_LOCK) + mounts of /sys/kernel/debug and /lib/modules. We don't
+#     auto-add those — set them manually in compose.yaml if you need
+#     CNM/USM in container mode.
+
+system_probe_config:
+  enabled: true
+  log_level: info
+
+# CNM (network flow + DNS).
+network_config:
+  enabled: true
+
+# Network Path Monitoring (dynamic tests). When enabled, system-probe runs
+# traceroutes over every TCP connection it observes — destination hosts +
+# path latency populate DD's Network → Network Path UI without any
+# scheduled-test config. Requires agent v7.73+ (the default `agent:7` /
+# `agent:7-jmx` tag tracks latest 7.x).
+#
+# Pairs with `network_path.connections_monitoring.enabled: true` in
+# datadog.yaml (set via DD_NETWORK_PATH_CONNECTIONS_MONITORING_ENABLED env).
+# system-probe runs the traces; the core agent forwards the results to DD.
+traceroute:
+  enabled: true
+
+# USM (service detection from L7 traffic).
+service_monitoring_config:
+  enabled: true
+  enable_http_monitoring: true
+  enable_http2_monitoring: true
+  enable_kafka_monitoring: true
+  enable_postgres_monitoring: true
+
+# CSM Threats / Cloud Workload Security (CWS). eBPF-based intrusion
+# detection — process exec, file integrity monitoring, container drift,
+# kernel exploits. Default-on as part of the security boilerplate;
+# activates only when system-probe is itself running
+# (DD_SYSTEM_PROBE_ENABLED=true in carto.env).
+runtime_security_config:
+  enabled: true
+  # Anything you don't want monitored goes here. Default: monitor all.
+  # network: { enabled: true }
+  # event_monitoring: { enabled: true }
+
+# Process collection knobs (Live Processes details). Live Processes itself
+# is enabled in the agent (DD_PROCESS_AGENT_ENABLED=true) and doesn't need
+# system-probe; this section configures the per-process *details* that
+# system-probe can add when it's running.
+process_config:
+  process_collection:
+    enabled: true

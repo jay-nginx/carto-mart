@@ -1,0 +1,19 @@
+{
+  "name": "carto-load-rum",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Puppeteer-based RUM/Product-Analytics traffic driver for the Carto storefront. Loops the browse -> sign in -> add to bag -> checkout -> track funnel so RUM, Session Replay and Product Analytics receive data the way real shoppers generate it, including tracking lookups by transaction id and by order number.",
+  "main": "main.js",
+  "scripts": {
+    "start": "node main.js"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "1.9.1",
+    "@opentelemetry/auto-instrumentations-node": "0.80.0",
+    "@opentelemetry/exporter-trace-otlp-proto": "0.222.0",
+    "@opentelemetry/instrumentation": "0.222.0",
+    "@opentelemetry/sdk-node": "0.222.0",
+    "dd-trace": "^5.0.0",
+    "puppeteer": "^23.0.0"
+  }
+}

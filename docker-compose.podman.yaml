@@ -1,0 +1,24 @@
+# Podman override for the Datadog Agent.
+#
+# Three assumptions in compose.yaml are Docker Desktop specific and break on a
+# Podman machine (Fedora, SELinux enforcing, no apparmor):
+#
+#   1. /var/lib/docker/containers does not exist. Podman keeps container state
+#      under /var/lib/containers. The Agent reads this for container log
+#      files, so it is remapped rather than dropped. Compose merges volumes by
+#      TARGET path, so re-declaring the same target swaps the source.
+#   2. The Agent discovers workloads over /var/run/docker.sock. podman-mac-helper
+#      has symlinked that to the Podman API socket, which speaks the Docker
+#      API, so discovery works unchanged — but the Podman bolt DB is mounted
+#      too and DD_PODMAN_DB_PATH set, which is the supported path and gives the
+#      Agent correct container metadata rather than Docker-shaped guesses.
+#   3. SELinux is enforcing. Host mounts into a container need a relabel
+#      exemption or every read is denied; apparmor:unconfined is meaningless
+#      here. See the note on security_opt below.
+services:
+  datadog-agent:
+    environment:
+      DD_PODMAN_DB_PATH: /var/lib/containers/storage/libpod/bolt_state.db
+    volumes:
+    - /var/lib/containers:/var/lib/docker/containers:ro
+    - /var/lib/containers/storage:/var/lib/containers/storage:ro

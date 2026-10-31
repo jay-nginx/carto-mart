@@ -1,0 +1,116 @@
+# Postgres as a StatefulSet, not a Deployment: the demo's whole argument rests
+# on a transaction ledger that survives a restart, and a Deployment with a PVC
+# will happily start a second pod against the same volume during a rollout.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: carto
+  labels: { app: postgres }
+spec:
+  # Headless: the StatefulSet gets a stable DNS name and nothing needs to
+  # load-balance across one replica.
+  clusterIP: None
+  selector: { app: postgres }
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: carto
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels: { app: postgres }
+  template:
+    metadata:
+      labels:
+        app: postgres
+        tags.datadoghq.com/service: carto-postgres
+        tags.datadoghq.com/env: prd
+        tags.datadoghq.com/version: "16"
+      annotations:
+        # Datadog Autodiscovery: this is how the Agent knows to run the postgres
+        # check and DBM against this pod without anyone editing agent config.
+        ad.datadoghq.com/postgres.checks: |
+          {
+            "postgres": {
+              "init_config": {},
+              "instances": [{
+                "host": "%%host%%",
+                "port": 5432,
+                "username": "datadog",
+                "password": "datadog",
+                "dbm": true,
+                "database_autodiscovery": {"enabled": true},
+                "collect_schemas": {"enabled": true}
+              }]
+            }
+          }
+    spec:
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        fsGroup: 999
+      containers:
+        - name: postgres
+          image: postgres:16
+          args: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              valueFrom: { configMapKeyRef: { name: carto-config, key: POSTGRES_DB } }
+            - name: POSTGRES_USER
+              valueFrom: { configMapKeyRef: { name: carto-config, key: POSTGRES_USER } }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: carto-secrets, key: POSTGRES_PASSWORD } }
+            # Postgres refuses to initialise into a non-empty mount, and a PVC
+            # arrives with a lost+found. Giving it a subdirectory is the
+            # standard fix and is why PGDATA is set rather than defaulted.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+            - name: conf
+              mountPath: /etc/postgresql
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "webapp", "-d", "carto", "-h", "127.0.0.1"]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "webapp", "-d", "carto", "-h", "127.0.0.1"]
+            initialDelaySeconds: 40
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits:   { memory: 1Gi }
+      volumes:
+        - name: init
+          configMap:
+            name: postgres-init
+        - name: conf
+          configMap:
+            name: postgres-conf
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 4Gi

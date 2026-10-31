@@ -1,0 +1,23 @@
+# OpenTelemetry dependency set — used by MODE=otel (opentelemetry-instrument)
+# and MODE=dual (OTel API + contrib instrumentors on the ddtrace runtime).
+#
+# Installed unconditionally alongside requirements.txt so a mode switch is a
+# ~5s container recreate rather than a ~3min rebuild of every app image. A
+# build-arg approach would make the mode part of the image identity and force
+# a rebuild on every switch — unacceptable when switching modes live.
+#
+# VERSIONS ARE PINNED TO 0.62b1 / 1.41.1 ON PURPOSE.
+# `listings` runs on python:3.9-slim-bullseye, pinned deliberately because the
+# EOL interpreter and stale bullseye packages ARE the SBOM/CVE story (see
+# listings/Dockerfile — do not "fix" the base image). opentelemetry-distro
+# requires Python >= 3.10 from 0.63b0 onward, so 0.62b1 is the last release
+# that installs on 3.9. All three services are pinned to the same versions so
+# there is no semconv/OTLP skew between them.
+
+opentelemetry-distro==0.62b1
+opentelemetry-exporter-otlp==1.41.1
+opentelemetry-instrumentation-fastapi==0.62b1
+opentelemetry-instrumentation-requests==0.62b1
+opentelemetry-instrumentation-httpx==0.62b1
+opentelemetry-instrumentation-logging==0.62b1
+opentelemetry-instrumentation-psycopg2==0.62b1

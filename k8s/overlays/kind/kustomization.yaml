@@ -1,0 +1,40 @@
+# Local cluster, running inside Podman. The point of this overlay is to be
+# honest about what kind can and cannot do, rather than pretending it is GKE.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: carto
+
+resources:
+  - ../../base
+
+# kind has one node, so a 2-replica Deployment just schedules two pods on the
+# same kubelet and proves nothing extra while eating a laptop's memory.
+replicas:
+  - { name: catalogue, count: 1 }
+  - { name: checkout,  count: 1 }
+  - { name: bff,       count: 1 }
+  - { name: web,       count: 1 }
+  - { name: guardrails, count: 1 }
+
+patches:
+  # kind serves a self-signed kubelet certificate and has no GCE ingress.
+  - path: ingress-nginx.yaml
+    target: { kind: Ingress, name: carto }
+  # Images are side-loaded with `kind load`, so there is no registry to pull
+  # from and IfNotPresent must be respected absolutely.
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Never
+    target: { kind: Deployment, labelSelector: "app in (catalogue,checkout,fulfilment,guardrails,joy,bff,web,load)" }
+
+# carto-config is a plain resource rather than a generated one, so this is a
+# patch and not a configMapGenerator merge.
+  - patch: |-
+      - op: replace
+        path: /data/DD_ENV
+        value: "dev"
+      - op: replace
+        path: /data/DD_CLUSTER_NAME
+        value: "carto-kind"
+    target: { kind: ConfigMap, name: carto-config }

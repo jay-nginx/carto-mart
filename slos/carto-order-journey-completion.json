@@ -1,0 +1,29 @@
+{
+  "name": "[Carto] Order journey completion past the fulfilment seam",
+  "description": "Share of dispatched orders that reach a terminal fulfilment stage (delivered or ready for collection) rather than going quiet. The numerator and denominator both come from hops recorded against Carto's own transaction ids, because the systems doing this work \u2014 the WMS and the carrier \u2014 emit no Datadog telemetry. Without the txn_id ledger this SLO could not be expressed at all.",
+  "type": "metric",
+  "query": {
+    "numerator": "sum:carto.fulfilment.completed{env:prd}.as_count()",
+    "denominator": "sum:carto.fulfilment.dispatch{env:prd,result:accepted}.as_count()"
+  },
+  "thresholds": [
+    {
+      "timeframe": "7d",
+      "target": 95.0,
+      "warning": 98.0
+    },
+    {
+      "timeframe": "30d",
+      "target": 95.0,
+      "warning": 98.0
+    }
+  ],
+  "tags": [
+    "harness:carto",
+    "team:carto-digital",
+    "purpose:carto-demo",
+    "business_unit:carto-digital",
+    "slo:fulfilment",
+    "observability:blackbox"
+  ]
+}

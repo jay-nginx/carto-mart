@@ -1,0 +1,67 @@
+# Non-secret configuration. Everything here is safe to read; credentials live
+# in the Secret next door and are never written to a ConfigMap.
+#
+# NOTE ON DD_AGENT_HOST: in Compose the Agent is a sibling container reachable
+# by name. In Kubernetes the Agent is a DaemonSet, so a pod must reach the
+# Agent ON ITS OWN NODE — routing traces to a random node's Agent would break
+# the host tags the whole demo relies on. status.hostIP is injected per pod in
+# each Deployment below rather than hardcoded here.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: carto-config
+  namespace: carto
+data:
+  # Must match the Datadog site your org lives in; see carto.env.example.
+  # Overridden per environment by the kustomize overlays.
+  DD_SITE: "datadoghq.com"
+  DD_CLUSTER_NAME: "carto-demo"
+  DD_ENV: "prd"
+  DD_VERSION: "0.1.0"
+  DD_LOGS_INJECTION: "true"
+  DD_TRACE_SAMPLE_RATE: "1.0"
+  DD_PROFILING_ENABLED: "true"
+  DD_RUNTIME_METRICS_ENABLED: "true"
+  DD_APPSEC_ENABLED: "true"
+  DD_APPSEC_SCA_ENABLED: "true"
+  DD_IAST_ENABLED: "true"
+  DD_API_SECURITY_ENABLED: "true"
+  DD_APPSEC_AUTO_USER_INSTRUMENTATION_MODE: "identification"
+  DD_DYNAMIC_INSTRUMENTATION_ENABLED: "true"
+  DD_EXCEPTION_REPLAY_ENABLED: "true"
+  DD_CODE_ORIGIN_FOR_SPANS_ENABLED: "true"
+  DD_TRACE_AGENT_PORT: "8126"
+  INSTRUMENTATION_MODE: "agent"
+
+  POSTGRES_HOST: "postgres"
+  POSTGRES_DB: "carto"
+  POSTGRES_USER: "webapp"
+
+  CATALOGUE_URL: "http://catalogue:8080"
+  CHECKOUT_URL: "http://checkout:8080"
+  FULFILMENT_URL: "http://fulfilment:8080"
+  JOY_URL: "http://joy:8080"
+  GUARDRAILS_URL: "http://guardrails:8080"
+
+  CARTO_METRIC_EXPORT_MS: "10000"
+  CARTO_EXPECTED_NEW_RANGE: "6"
+  CARTO_STAGE_INTERVAL_S: "20"
+  CARTO_BUSINESS_UNIT: "carto-digital"
+  CARTO_BANNER: "carto"
+
+  JOY_MODEL: "claude-haiku-4-5-20251001"
+  JOY_INTERVAL_S: "25"
+  JOY_MAX_TOKENS: "180"
+  JOY_DRIVER_ENABLED: "true"
+  JOY_INJECTION_RATE: "0.15"
+  AGENT_ID: "joy-assistant"
+
+  GUARDRAIL_ENABLED: "true"
+  GUARDRAIL_BUDGET_USD: "0.50"
+  GUARDRAIL_APPROVAL_THRESHOLD_AUD: "150"
+  GUARDRAIL_APPROVAL_TTL_S: "120"
+  GUARDRAIL_POLICY_VERSION: "2026.10.1"
+
+  LOAD_CONCURRENCY: "3"
+  LOOP_DELAY_MS: "5000"
+  RAGE_CLICK_PCT: "0.35"

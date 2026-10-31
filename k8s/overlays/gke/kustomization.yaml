@@ -1,0 +1,59 @@
+# Google Kubernetes Engine.
+#
+# scripts/gke-deploy.sh fills IMAGE_REGISTRY and the Secret from carto.env; the
+# only thing this overlay does by itself is apply the GKE-specific settings
+# that would be wrong on a local cluster.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: carto
+
+resources:
+  - ../../base
+  - backendconfig.yaml
+
+# Replaced by gke-deploy.sh with ${IMAGE_REGISTRY}/${IMAGE_TAG}. Left as the
+# bare names here so `kustomize build` still works without the script.
+images:
+  - { name: carto-catalogue,  newTag: latest }
+  - { name: carto-checkout,   newTag: latest }
+  - { name: carto-fulfilment, newTag: latest }
+  - { name: carto-guardrails, newTag: latest }
+  - { name: carto-joy,        newTag: latest }
+  - { name: carto-bff,        newTag: latest }
+  - { name: carto-web,        newTag: latest }
+  - { name: carto-load,       newTag: latest }
+
+patches:
+  # GKE's kubelet presents a real certificate, so verification goes back on.
+  # A strategic-merge patch keyed on the env var's NAME, not a JSON-pointer
+  # index: an index patch silently hit the wrong variable when the env list was
+  # reordered, leaving TLS verification off on GKE while appearing to work.
+  - patch: |-
+      apiVersion: apps/v1
+      kind: DaemonSet
+      metadata:
+        name: datadog-agent
+      spec:
+        template:
+          spec:
+            containers:
+              - name: agent
+                env:
+                  - name: DD_KUBELET_TLS_VERIFY
+                    value: "true"
+    target: { kind: DaemonSet, name: datadog-agent }
+  # The GCE ingress health-checks the backend; without this it probes / on the
+  # BFF and marks it unhealthy because / is the SPA, not an API route.
+  - patch: |-
+      - op: add
+        path: /metadata/annotations/cloud.google.com~1backend-config
+        value: '{"default": "carto-bff-backendconfig"}'
+    target: { kind: Service, name: bff }
+
+# carto-config is a plain resource rather than a generated one, so this is a
+# patch and not a configMapGenerator merge.
+  - patch: |-
+      - op: replace
+        path: /data/DD_ENV
+        value: "prd"
+    target: { kind: ConfigMap, name: carto-config }

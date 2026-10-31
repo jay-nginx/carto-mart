@@ -1,0 +1,594 @@
+# ===========================================================================
+# Carto Group digital commerce demo — full local stack.
+#
+#   web (React + RUM, nginx)            :5175 -> 80
+#     └── bff (Node storefront BFF)      :8091 -> 8080
+#           ├── catalogue (Python)       :8021 -> 8080   product range, stock
+#           ├── checkout  (Python)       :8022 -> 8080   payment + order
+#           │     └── fulfilment (Python):8023 -> 8080   the black box
+#           └── joy       (Python)       :8024 -> 8080   LLM assistant
+#     └── postgres 16 (DBM enabled)
+#     load (Puppeteer)                          drives real browser journeys
+#     datadog-agent                             APM, logs, metrics, DBM, CSM
+#
+# HOST PORTS live in a Carto-specific block (80xx/517x) so this harness runs
+# SIDE BY SIDE with the HouseHunt harness on the same laptop (which owns
+# 8011-8013/8090/5174). Container ports and compose-network hostnames are
+# unchanged, so nothing inside the stack cares.
+# ===========================================================================
+name: carto
+
+x-python-obs: &python-obs
+  INSTRUMENTATION_MODE: ${INSTRUMENTATION_MODE:-agent}
+  DD_TAGS: instrumentation:${INSTRUMENTATION_MODE:-agent}
+  DD_AGENT_HOST: datadog-agent
+  DD_TRACE_AGENT_PORT: '8126'
+  DD_ENV: ${DD_ENV:-dev}
+  DD_VERSION: 0.1.0
+  DD_LOGS_INJECTION: 'true'
+  DD_TRACE_SAMPLE_RATE: '1.0'
+  DD_PROFILING_ENABLED: 'true'
+  DD_RUNTIME_METRICS_ENABLED: 'true'
+  DD_APPSEC_ENABLED: 'true'
+  DD_APPSEC_SCA_ENABLED: 'true'
+  DD_IAST_ENABLED: 'true'
+  DD_API_SECURITY_ENABLED: 'true'
+  DD_APPSEC_AUTO_USER_INSTRUMENTATION_MODE: identification
+  # Source Code Integration — stamps every span, profile and crash with the
+  # repo and commit, which is what turns a stack frame in Error Tracking into
+  # a clickable line of source. Needs the Datadog GitHub integration and the
+  # repo pushed somewhere it can see; until then the tags are harmless.
+  DD_GIT_REPOSITORY_URL: ${DD_GIT_REPOSITORY_URL:-github.com/j-d-repo/carto-demo}
+  DD_GIT_COMMIT_SHA: ${DD_GIT_COMMIT_SHA:-}
+  # Remote-Configuration-driven APM capabilities. All three need
+  # DD_REMOTE_CONFIGURATION_ENABLED on the Agent (it is on) AND an API key
+  # with the Remote Configuration capability.
+  DD_DYNAMIC_INSTRUMENTATION_ENABLED: 'true'
+  DD_EXCEPTION_REPLAY_ENABLED: 'true'
+  DD_CODE_ORIGIN_FOR_SPANS_ENABLED: 'true'
+  # OTel METRICS routing. The signal-specific var deliberately overrides the
+  # general OTEL_EXPORTER_OTLP_ENDPOINT, which is what lets metrics reach the
+  # Agent's OTLP receiver while traces keep using the APM port.
+  OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: http://datadog-agent:4318/v1/metrics
+  CARTO_METRIC_EXPORT_MS: ${CARTO_METRIC_EXPORT_MS:-10000}
+  POSTGRES_HOST: postgres
+  POSTGRES_DB: carto
+  POSTGRES_USER: webapp
+  POSTGRES_PASSWORD: webapppw
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: carto-postgres
+    hostname: postgres
+    restart: unless-stopped
+    command:
+    - postgres
+    - -c
+    - config_file=/etc/postgresql/postgresql.conf
+    environment:
+      POSTGRES_PASSWORD: webapppw
+      POSTGRES_DB: carto
+      POSTGRES_USER: webapp
+    volumes:
+    - ./postgres/00-dbm-init.sql:/docker-entrypoint-initdb.d/00-dbm-init.sql:ro
+    - ./postgres/10-carto-seed.sql:/docker-entrypoint-initdb.d/10-carto-seed.sql:ro
+    - ./postgres/20-guardrails-seed.sql:/docker-entrypoint-initdb.d/20-guardrails-seed.sql:ro
+    - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+    - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "webapp", "-d", "carto"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    labels:
+      com.datadoghq.tags.service: carto-postgres
+      com.datadoghq.tags.env: ${DD_ENV:-dev}
+      com.datadoghq.tags.version: 0.1.0
+      com.datadoghq.tags.language: postgres
+      com.datadoghq.tags.tier: db
+      com.datadoghq.tags.role: rdbms
+      com.datadoghq.tags.business_unit: carto-digital
+      com.datadoghq.ad.logs: '[{"source": "postgresql", "service": "carto-postgres"}]'
+      com.datadoghq.ad.checks: |
+        {
+          "postgres": {
+            "init_config": {},
+            "instances": [
+              {
+                "dbm": true,
+                "collect_schemas": { "enabled": true, "collection_interval": 600 },
+                "host": "%%host%%",
+                "port": 5432,
+                "username": "datadog",
+                "password": "datadogpw",
+                "dbname": "carto",
+                "tags": ["component:postgres", "tier:db", "role:rdbms", "business_unit:carto-digital"]
+              }
+            ]
+          }
+        }
+
+  catalogue:
+    build: ./catalogue
+    container_name: carto-catalogue
+    # A crash must not end the demo: replace the container and keep
+    # trading. The healthcheck is what makes that possible — it hits
+    # /healthz, which proves the database is reachable, not merely that
+    # the process is listening.
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    ports:
+    - 8021:8080
+    environment:
+      <<: *python-obs
+      DD_SERVICE: carto-catalogue
+      CARTO_EXPECTED_NEW_RANGE: ${CARTO_EXPECTED_NEW_RANGE:-6}
+      CARTO_RANGE_PUBLISH_BROKEN: ${CARTO_RANGE_PUBLISH_BROKEN:-false}
+    labels:
+      com.datadoghq.tags.service: carto-catalogue
+      com.datadoghq.tags.env: ${DD_ENV:-dev}
+      com.datadoghq.tags.instrumentation: ${INSTRUMENTATION_MODE:-agent}
+      com.datadoghq.tags.version: 0.1.0
+      com.datadoghq.tags.language: python
+      com.datadoghq.tags.tier: backend
+      com.datadoghq.tags.business_unit: carto-digital
+      com.datadoghq.ad.logs: '[{"source": "python", "service": "carto-catalogue"}]'
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  checkout:
+    build: ./checkout
+    container_name: carto-checkout
+    # A crash must not end the demo: replace the container and keep
+    # trading. The healthcheck is what makes that possible — it hits
+    # /healthz, which proves the database is reachable, not merely that
+    # the process is listening.
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    ports:
+    - 8022:8080
+    environment:
+      <<: *python-obs
+      DD_SERVICE: carto-checkout
+      CATALOGUE_URL: http://catalogue:8080
+      FULFILMENT_URL: http://fulfilment:8080
+      CARTO_PEAK_LATENCY_MS: ${CARTO_PEAK_LATENCY_MS:-0}
+    labels:
+      com.datadoghq.tags.service: carto-checkout
+      com.datadoghq.tags.env: ${DD_ENV:-dev}
+      com.datadoghq.tags.instrumentation: ${INSTRUMENTATION_MODE:-agent}
+      com.datadoghq.tags.version: 0.1.0
+      com.datadoghq.tags.language: python
+      com.datadoghq.tags.tier: backend
+      com.datadoghq.tags.business_unit: carto-digital
+      com.datadoghq.ad.logs: '[{"source": "python", "service": "carto-checkout"}]'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      catalogue:
+        condition: service_started
+
+  fulfilment:
+    build: ./fulfilment
+    container_name: carto-fulfilment
+    # A crash must not end the demo: replace the container and keep
+    # trading. The healthcheck is what makes that possible — it hits
+    # /healthz, which proves the database is reachable, not merely that
+    # the process is listening.
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    ports:
+    - 8023:8080
+    environment:
+      <<: *python-obs
+      DD_SERVICE: carto-fulfilment
+      CARTO_STAGE_INTERVAL_S: ${CARTO_STAGE_INTERVAL_S:-12}
+    labels:
+      com.datadoghq.tags.service: carto-fulfilment
+      com.datadoghq.tags.env: ${DD_ENV:-dev}
+      com.datadoghq.tags.instrumentation: ${INSTRUMENTATION_MODE:-agent}
+      com.datadoghq.tags.version: 0.1.0
+      com.datadoghq.tags.language: python
+      com.datadoghq.tags.tier: fulfilment
+      com.datadoghq.tags.role: wms-gateway
+      com.datadoghq.tags.business_unit: carto-supply-chain
+      com.datadoghq.ad.logs: '[{"source": "python", "service": "carto-fulfilment"}]'
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  joy:
+    build: ./joy
+    container_name: carto-joy
+    # A crash must not end the demo: replace the container and keep
+    # trading. The healthcheck is what makes that possible — it hits
+    # /healthz, which proves the database is reachable, not merely that
+    # the process is listening.
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    ports:
+    - 8024:8080
+    environment:
+      <<: *python-obs
+      DD_SERVICE: carto-joy
+      # LLM Observability — ddtrace auto-instruments the Anthropic SDK.
+      # Agentless off: payloads route through the local Agent.
+      DD_LLMOBS_ENABLED: 'true'
+      DD_LLMOBS_ML_APP: carto-joy
+      DD_LLMOBS_AGENTLESS_ENABLED: 'false'
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      JOY_MODEL: ${JOY_MODEL:-claude-haiku-4-5-20251001}
+      JOY_INTERVAL_S: ${JOY_INTERVAL_S:-25}
+      JOY_MAX_TOKENS: ${JOY_MAX_TOKENS:-180}
+      JOY_DRIVER_ENABLED: ${JOY_DRIVER_ENABLED:-true}
+      JOY_INJECTION_RATE: ${JOY_INJECTION_RATE:-0.15}
+      # Agent actions are evaluated out of process; see guardrails/.
+      GUARDRAILS_URL: http://guardrails:8080
+      AGENT_ID: joy-assistant
+      AGENT_IDENTITY_TOKEN: ${GUARDRAIL_AGENT_TOKEN:-carto-agent-attestation}
+    labels:
+      com.datadoghq.tags.service: carto-joy
+      com.datadoghq.tags.env: ${DD_ENV:-dev}
+      com.datadoghq.tags.instrumentation: ${INSTRUMENTATION_MODE:-agent}
+      com.datadoghq.tags.version: 0.1.0
+      com.datadoghq.tags.language: python
+      com.datadoghq.tags.tier: ai
+      com.datadoghq.tags.business_unit: carto-digital
+      com.datadoghq.ad.logs: '[{"source": "python", "service": "carto-joy"}]'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      guardrails:
+        condition: service_started
+
+  guardrails:
+    build: ./guardrails
+    container_name: carto-guardrails
+    # The evaluator is in the request path of every agent action and FAILS
+    # CLOSED: if it is down, Joy refuses to act. That makes its own health a
+    # first-class concern, hence the same restart/healthcheck contract as the
+    # services that take money.
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    ports:
+    - 8025:8080
+    environment:
+      <<: *python-obs
+      DD_SERVICE: carto-guardrails
+      GUARDRAIL_ENABLED: ${GUARDRAIL_ENABLED:-true}
+      GUARDRAIL_BUDGET_USD: ${GUARDRAIL_BUDGET_USD:-0.50}
+      GUARDRAIL_APPROVAL_THRESHOLD_AUD: ${GUARDRAIL_APPROVAL_THRESHOLD_AUD:-150}
+      GUARDRAIL_APPROVAL_TTL_S: ${GUARDRAIL_APPROVAL_TTL_S:-120}
+      GUARDRAIL_POLICY_VERSION: ${GUARDRAIL_POLICY_VERSION:-2026.10.1}
+      # Pillar 1 verifies the agent's attestation against this. Blank it in
+      # carto.env to show Identity denying.
+      GUARDRAIL_AGENT_TOKEN: ${GUARDRAIL_AGENT_TOKEN:-carto-agent-attestation}
+    labels:
+      com.datadoghq.tags.service: carto-guardrails
+      com.datadoghq.tags.env: ${DD_ENV:-dev}
+      com.datadoghq.tags.instrumentation: ${INSTRUMENTATION_MODE:-agent}
+      com.datadoghq.tags.version: 0.1.0
+      com.datadoghq.tags.language: python
+      com.datadoghq.tags.tier: ai-governance
+      com.datadoghq.tags.business_unit: carto-digital
+      com.datadoghq.ad.logs: '[{"source": "python", "service": "carto-guardrails"}]'
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  bff:
+    build: ./bff
+    container_name: carto-bff
+    # A crash must not end the demo: replace the container and keep
+    # trading. The healthcheck is what makes that possible — it hits
+    # /healthz, which proves the database is reachable, not merely that
+    # the process is listening.
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    hostname: bff
+    ports:
+    - 8091:8080
+    environment:
+      INSTRUMENTATION_MODE: ${INSTRUMENTATION_MODE:-agent}
+      DD_TAGS: instrumentation:${INSTRUMENTATION_MODE:-agent}
+      DD_AGENT_HOST: datadog-agent
+      DD_TRACE_AGENT_PORT: '8126'
+      DD_SERVICE: carto-storefront
+      DD_ENV: ${DD_ENV:-dev}
+      DD_VERSION: 0.1.0
+      DD_SITE: ${DD_SITE:-datadoghq.com}
+      DD_LOGS_INJECTION: 'true'
+      DD_TRACE_SAMPLE_RATE: '1.0'
+      DD_PROFILING_ENABLED: 'true'
+      DD_RUNTIME_METRICS_ENABLED: 'true'
+      NODE_OPTIONS: -r dd-trace/init
+      DD_APPSEC_ENABLED: 'true'
+      DD_APPSEC_SCA_ENABLED: 'true'
+      DD_IAST_ENABLED: 'true'
+      DD_API_SECURITY_ENABLED: 'true'
+      DD_APPSEC_AUTO_USER_INSTRUMENTATION_MODE: identification
+      DD_GIT_REPOSITORY_URL: ${DD_GIT_REPOSITORY_URL:-github.com/j-d-repo/carto-demo}
+      DD_GIT_COMMIT_SHA: ${DD_GIT_COMMIT_SHA:-}
+      DD_DYNAMIC_INSTRUMENTATION_ENABLED: 'true'
+      DD_EXCEPTION_REPLAY_ENABLED: 'true'
+      DD_CODE_ORIGIN_FOR_SPANS_ENABLED: 'true'
+      OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: http://datadog-agent:4318/v1/metrics
+      CARTO_METRIC_EXPORT_MS: ${CARTO_METRIC_EXPORT_MS:-10000}
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: carto
+      POSTGRES_USER: webapp
+      POSTGRES_PASSWORD: webapppw
+      CATALOGUE_URL: http://catalogue:8080
+      CHECKOUT_URL: http://checkout:8080
+      FULFILMENT_URL: http://fulfilment:8080
+      JOY_URL: http://joy:8080
+      GUARDRAILS_URL: http://guardrails:8080
+      # Demo control surface at /api/demo/* — unauthenticated, state-changing
+      # GET routes so the demo guide can drive the stack from plain links.
+      CARTO_DEMO_CONTROLS: ${CARTO_DEMO_CONTROLS:-true}
+      CARTO_DEMO_PASSWORD: ${CARTO_DEMO_PASSWORD:-demo}
+      CORS_ALLOWED_ORIGIN: '*'
+    labels:
+      com.datadoghq.tags.service: carto-storefront
+      com.datadoghq.tags.env: ${DD_ENV:-dev}
+      com.datadoghq.tags.instrumentation: ${INSTRUMENTATION_MODE:-agent}
+      com.datadoghq.tags.version: 0.1.0
+      com.datadoghq.tags.language: nodejs
+      com.datadoghq.tags.tier: bff
+      com.datadoghq.tags.business_unit: carto-digital
+      com.datadoghq.ad.logs: '[{"source": "nodejs", "service": "carto-storefront"}]'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      catalogue:
+        condition: service_started
+      checkout:
+        condition: service_started
+
+  web:
+    build:
+      context: ./web
+      args:
+        VITE_DD_RUM_APPLICATION_ID: ''
+        VITE_DD_RUM_CLIENT_TOKEN: ''
+        VITE_DD_SITE: ${DD_SITE:-datadoghq.com}
+        VITE_DD_SERVICE: carto-web
+        VITE_DD_ENV: ${DD_ENV:-dev}
+        VITE_DD_VERSION: 0.1.0
+        VITE_DD_GIT_COMMIT_SHA: ${DD_GIT_COMMIT_SHA:-}
+        VITE_DD_GIT_REPOSITORY_URL: ${DD_GIT_REPOSITORY_URL:-github.com/j-d-repo/carto-demo}
+    container_name: carto-web
+    hostname: web
+    restart: unless-stopped
+    healthcheck:
+      # 127.0.0.1, NOT localhost: nginx binds 0.0.0.0:80 (IPv4 only) while
+      # busybox wget resolves localhost to ::1 first, so the name form fails
+      # with "Connection refused" and marks a perfectly healthy container
+      # unhealthy.
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1/healthz || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    ports:
+    - 5175:80
+    labels:
+      com.datadoghq.tags.service: carto-web
+      com.datadoghq.tags.env: ${DD_ENV:-dev}
+      com.datadoghq.tags.instrumentation: ${INSTRUMENTATION_MODE:-agent}
+      com.datadoghq.tags.version: 0.1.0
+      com.datadoghq.tags.language: javascript
+      com.datadoghq.tags.tier: web
+      com.datadoghq.tags.role: spa
+      com.datadoghq.tags.business_unit: carto-digital
+      com.datadoghq.ad.logs: '[{"source": "nginx", "service": "carto-web"}]'
+    # nginx resolves proxy_pass upstreams at CONFIG LOAD time and web/nginx.conf
+    # proxies /api/ to `bff`. Without this, nginx can lose a startup race and
+    # die with: [emerg] host not found in upstream "bff".
+    depends_on:
+      bff:
+        condition: service_started
+
+  load:
+    build: ./load
+    container_name: carto-load
+    restart: unless-stopped
+    environment:
+      TARGET_URL: http://web
+      LOOP_DELAY_MS: ${LOOP_DELAY_MS:-5000}
+      CONCURRENCY: ${LOAD_CONCURRENCY:-3}
+      RAGE_CLICK_PCT: ${RAGE_CLICK_PCT:-0.35}
+      INSTRUMENTATION_MODE: ${INSTRUMENTATION_MODE:-agent}
+      DD_TAGS: instrumentation:${INSTRUMENTATION_MODE:-agent}
+      DD_AGENT_HOST: datadog-agent
+      DD_TRACE_AGENT_PORT: '8126'
+      DD_SERVICE: carto-load
+      DD_ENV: ${DD_ENV:-dev}
+      DD_VERSION: 0.1.0
+      DD_LOGS_INJECTION: 'true'
+      NODE_OPTIONS: -r dd-trace/init
+    labels:
+      com.datadoghq.tags.service: carto-load
+      com.datadoghq.tags.env: ${DD_ENV:-dev}
+      com.datadoghq.tags.instrumentation: ${INSTRUMENTATION_MODE:-agent}
+      com.datadoghq.tags.version: 0.1.0
+      com.datadoghq.tags.language: nodejs
+      com.datadoghq.tags.tier: load
+      com.datadoghq.tags.role: rum-driver
+      com.datadoghq.ad.logs: '[{"source": "nodejs", "service": "carto-load"}]'
+    depends_on:
+      web:
+        condition: service_started
+      bff:
+        condition: service_started
+
+  synthetics-pl:
+    # Datadog Synthetics Private Location worker. Runs on the carto compose
+    # network so the synthetic tests can reach http://web and http://bff:8080 —
+    # managed locations cannot. Needs a config file generated in the DD UI
+    # (Synthetic Monitoring -> Settings -> Private Locations). It holds secrets,
+    # so it is gitignored.
+    #
+    # OPT-IN via profile: without the config the worker exits 255 and
+    # `restart: unless-stopped` turns that into a permanent crash loop.
+    #   COMPOSE_PROFILES=agent,synthetics make up
+    image: datadog/synthetics-private-location-worker:latest
+    profiles:
+    - synthetics
+    platform: linux/amd64
+    container_name: carto-synthetics-pl
+    restart: unless-stopped
+    volumes:
+    - ./synthetics-pl-config.json:/etc/datadog/synthetics-check-runner.json:ro
+    labels:
+      com.datadoghq.tags.service: carto-synthetics-pl
+      com.datadoghq.tags.env: ${DD_ENV:-dev}
+      com.datadoghq.tags.version: 0.1.0
+      com.datadoghq.tags.role: synthetics-pl
+      com.datadoghq.ad.logs: '[{"source": "docker", "service": "carto-synthetics-pl"}]'
+    depends_on:
+      web:
+        condition: service_started
+      bff:
+        condition: service_started
+
+  datadog-agent:
+    image: gcr.io/datadoghq/agent:7
+    profiles:
+    - agent
+    - dual
+    container_name: carto-dd-agent
+    restart: unless-stopped
+    pid: host
+    cgroup: host
+    environment:
+      DD_API_KEY: ${DD_API_KEY:-}
+      DD_SITE: ${DD_SITE:-datadoghq.com}
+      DD_HOSTNAME: ${DD_HOSTNAME:-harness-carto}
+      # The universal tag scheme. This is the segment of the demo that argues
+      # for one data model across stores, digital, Carto, Vantage and Kin — so
+      # the harness actually carries business tags, not just env/service.
+      DD_TAGS: >-
+        env:${DD_ENV:-dev} service:carto version:0.1.0
+        team:${DD_TEAM:-carto-digital} harness:carto harness_instance:carto
+        owner:${HARNESS_OWNER:-unknown} org:${DD_ORG:-unknown}
+        purpose:carto-demo customer:carto-demo
+        business_unit:${CARTO_BUSINESS_UNIT:-carto-digital}
+        banner:${CARTO_BANNER:-carto} channel:digital region:anz
+        instrumentation:${INSTRUMENTATION_MODE:-agent}
+      DD_APM_ENABLED: ${DD_APM_ENABLED:-true}
+      DD_APM_NON_LOCAL_TRAFFIC: 'true'
+      DD_USE_DOGSTATSD: 'true'
+      DD_DOGSTATSD_NON_LOCAL_TRAFFIC: 'true'
+      DD_LOGS_ENABLED: ${DD_LOGS_ENABLED:-true}
+      DD_LOGS_CONFIG_CONTAINER_COLLECT_ALL: 'true'
+      DD_PROCESS_AGENT_ENABLED: ${DD_PROCESS_AGENT_ENABLED:-true}
+      DD_PROCESS_CONFIG_PROCESS_COLLECTION_ENABLED: 'true'
+      DD_SYSTEM_PROBE_ENABLED: ${DD_SYSTEM_PROBE_ENABLED:-true}
+      DD_NETWORK_PATH_CONNECTIONS_MONITORING_ENABLED: 'true'
+      DD_REMOTE_CONFIGURATION_ENABLED: 'true'
+      DD_INVENTORIES_CONFIGURATION_ENABLED: 'true'
+      DD_COMPLIANCE_CONFIG_ENABLED: 'true'
+      DD_COMPLIANCE_CONFIG_HOST_BENCHMARKS_ENABLED: 'true'
+      DD_CONTAINER_IMAGE_ENABLED: 'true'
+      DD_SBOM_ENABLED: 'true'
+      DD_SBOM_CONTAINER_IMAGE_ENABLED: 'true'
+      DD_SBOM_HOST_ENABLED: 'true'
+      DD_APPSEC_ENABLED: 'true'
+      DD_RUNTIME_SECURITY_CONFIG_ENABLED: ${DD_SYSTEM_PROBE_ENABLED:-true}
+      # OTLP receiver. Enabled in agent mode too, because the application's
+      # OTel METRICS pipeline ships here — app code only calls the OTel metrics
+      # API and neither dd-trace nor ddtrace provides a MeterProvider.
+      DD_OTLP_CONFIG_RECEIVER_PROTOCOLS_GRPC_ENDPOINT: 0.0.0.0:4317
+      DD_OTLP_CONFIG_RECEIVER_PROTOCOLS_HTTP_ENDPOINT: 0.0.0.0:4318
+      # NOT optional. On Agent >= 7.61.0 the OTLP ingest pipeline fails to
+      # start in Docker unless HOST_PROC is set — and it fails SILENTLY.
+      HOST_PROC: /proc
+      # Scope this Agent to THIS harness's containers only. The Agent discovers
+      # workloads through the mounted docker.sock, which sees EVERY container
+      # on the host. With a sibling harness running (HouseHunt etc.) an
+      # unscoped Agent would collect the other stack's logs and container
+      # metrics too — duplicate log lines in Datadog and container metrics
+      # attributed to whichever harness's host tags won.
+      DD_CONTAINER_EXCLUDE_LOGS: name:.*
+      DD_CONTAINER_INCLUDE_LOGS: name:carto-(postgres|catalogue|checkout|fulfilment|joy|guardrails|bff|web|load|synthetics-pl)
+      DD_CONTAINER_EXCLUDE: name:.*
+      DD_CONTAINER_INCLUDE: name:carto-.*
+      DD_DOCKER_LABELS_AS_TAGS: '{"com.datadoghq.tags.*": "%%label%%"}'
+      DD_LOG_LEVEL: ${DD_LOG_LEVEL:-INFO}
+    # NO PUBLISHED PORTS, on purpose: every app container reaches the Agent over
+    # the compose network, and publishing 8125/8126 reliably collides with an
+    # SE laptop's corporate-managed Agent or a sibling harness.
+    volumes:
+    - /var/run/docker.sock:/var/run/docker.sock:ro
+    - /proc/:/host/proc/:ro
+    - /sys/fs/cgroup/:/host/sys/fs/cgroup:ro
+    - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    - /sys/kernel/debug:/sys/kernel/debug
+    - /lib/modules:/lib/modules:ro
+    - /usr/src:/usr/src:ro
+    - ./agent-conf.d/linux_proc_extras.d:/etc/datadog-agent/conf.d/linux_proc_extras.d:ro
+    - ./agent-conf.d/directory.d:/etc/datadog-agent/conf.d/directory.d:ro
+    - ./agent-conf.d/processes.d:/etc/datadog-agent/conf.d/processes.d:ro
+    - ./agent-conf.d/cloud-siem.d:/etc/datadog-agent/conf.d/cloud-siem.d:ro
+    - ./agent-conf.d/system-probe.yaml:/etc/datadog-agent/system-probe.yaml:ro
+    cap_add:
+    - SYS_ADMIN
+    - SYS_RESOURCE
+    - SYS_PTRACE
+    - NET_ADMIN
+    - NET_BROADCAST
+    - NET_RAW
+    - IPC_LOCK
+    - CHOWN
+    security_opt:
+    - apparmor:unconfined
+    depends_on:
+      postgres:
+        condition: service_started
+      catalogue:
+        condition: service_started
+      checkout:
+        condition: service_started
+      fulfilment:
+        condition: service_started
+      bff:
+        condition: service_started
+      web:
+        condition: service_started
+
+volumes:
+  postgres-data: {}

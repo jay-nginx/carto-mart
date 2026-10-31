@@ -1,0 +1,19 @@
+# processes — per-process metric collection (CPU, RSS, threads, voluntary/
+# involuntary context switches, open fds). DIFFERENT from "Live Processes"
+# (which is the agent's process discovery + DD's Live Process page); this
+# is the `processes` check that emits time-series metrics tagged with the
+# process name. Useful for alerting on a specific process going missing
+# or hot.
+
+init_config:
+
+instances:
+  - name: datadog-agent
+    search_string: ['datadog-agent']
+    exact_match: false
+  - name: sshd
+    search_string: ['sshd']
+    exact_match: false
+  - name: systemd-journald
+    search_string: ['systemd-journald']
+    exact_match: false

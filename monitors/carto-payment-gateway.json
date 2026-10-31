@@ -1,0 +1,22 @@
+{
+  "name": "[Carto] Card authorisation errors by fulfilment method",
+  "type": "query alert",
+  "query": "sum(last_10m):sum:carto.payments.authorise{env:prd,result:gateway_error} by {fulfilment_method}.as_count() > 5",
+  "message": "{{#is_alert}}\n**The card gateway is failing for `{{fulfilment_method.name}}` \u2014 {{value}} errors in 10 minutes.**\n\nThis is deliberately a per-slice alert. A degradation that only affects express delivery is a rounding error in the overall error rate and a total outage for the customers who chose it.\n{{/is_alert}}",
+  "tags": [
+    "failure_mode:payment_gateway",
+    "harness:carto",
+    "team:carto-digital",
+    "purpose:carto-demo",
+    "business_unit:carto-digital"
+  ],
+  "priority": 2,
+  "options": {
+    "notify_no_data": false,
+    "renotify_interval": 0,
+    "include_tags": true,
+    "thresholds": {
+      "critical": 5
+    }
+  }
+}
