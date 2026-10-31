@@ -1,7 +1,20 @@
-fastapi>=0.115
-uvicorn[standard]>=0.32
-ddtrace>=2.20
-pydantic>=2.6
-psycopg2-binary>=2.9
-requests>=2.32
-anthropic>=0.39
+# Pinned to the versions this service was last built and tested with.
+#
+# These were floors (`>=`) until a from-scratch rebuild proved the problem: in
+# ONE build run, catalogue resolved fastapi 0.128.8 while the other services got
+# 0.141.1, and requests landed on 2.32.5 here and 2.34.2 there. A fork rebuilt
+# six months from now would silently pull whatever is current -- a major bump in
+# pydantic or ddtrace lands as a runtime failure, not a build failure.
+#
+# `uvicorn[standard]` keeps its extras marker; the extras themselves (uvloop,
+# httptools, websockets, watchfiles) are pulled in transitively.
+#
+# To move: edit, rebuild, run ./carto doctor and ./carto smoke, commit.
+
+fastapi==0.141.1
+uvicorn[standard]==0.54.0
+ddtrace==4.16.1
+pydantic==2.14.2
+psycopg2-binary==2.9.13
+requests==2.34.2
+anthropic==2.3.0

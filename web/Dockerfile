@@ -1,4 +1,4 @@
-# React 18 + Vite 5 SPA build pipeline for the Carto buyer portal.
+# React 18 + Vite 5 SPA build pipeline for the Carto storefront.
 # index.html, and src/ (must declare @datadog/browser-rum and
 # @datadog/browser-rum-recorder in deps so the bundle can init the RUM
 # SDK and Session Replay recorder).

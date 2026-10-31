@@ -12,7 +12,7 @@
 #     datadog-agent                             APM, logs, metrics, DBM, CSM
 #
 # HOST PORTS live in a Carto-specific block (80xx/517x) so this harness runs
-# SIDE BY SIDE with the HouseHunt harness on the same laptop (which owns
+# SIDE BY SIDE with another harness on the same laptop (one that owns
 # 8011-8013/8090/5174). Container ports and compose-network hostnames are
 # unchanged, so nothing inside the stack cares.
 # ===========================================================================
@@ -539,7 +539,7 @@ services:
       HOST_PROC: /proc
       # Scope this Agent to THIS harness's containers only. The Agent discovers
       # workloads through the mounted docker.sock, which sees EVERY container
-      # on the host. With a sibling harness running (HouseHunt etc.) an
+      # on the host. With a sibling harness running, an
       # unscoped Agent would collect the other stack's logs and container
       # metrics too — duplicate log lines in Datadog and container metrics
       # attributed to whichever harness's host tags won.

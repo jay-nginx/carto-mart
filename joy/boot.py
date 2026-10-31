@@ -26,8 +26,8 @@ uvicorn's default plaintext:
 
     INFO:     172.25.0.6:40768 - "GET /facets HTTP/1.1" 200 OK
 
-Measured against the live org, that was 51 of 75 records from `listings` —
-two thirds of the service's logs, uncorrelated and unparsed. `log_config=None`
+Measured against a live org, that was roughly two thirds of one service's
+log records — uncorrelated and unparsed. `log_config=None`
 tells uvicorn to configure no logging at all, so obs_logging's handlers
 survive and access logs go out in the same shape as everything else.
 """

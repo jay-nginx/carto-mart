@@ -7,11 +7,11 @@
 # a rebuild on every switch — unacceptable when switching modes live.
 #
 # VERSIONS ARE PINNED TO 0.62b1 / 1.41.1 ON PURPOSE.
-# `listings` runs on python:3.9-slim-bullseye, pinned deliberately because the
+# `catalogue` runs on python:3.9-slim-bullseye, pinned deliberately because the
 # EOL interpreter and stale bullseye packages ARE the SBOM/CVE story (see
-# listings/Dockerfile — do not "fix" the base image). opentelemetry-distro
+# catalogue/Dockerfile — do not "fix" the base image). opentelemetry-distro
 # requires Python >= 3.10 from 0.63b0 onward, so 0.62b1 is the last release
-# that installs on 3.9. All three services are pinned to the same versions so
+# that installs on 3.9. All five Python services are pinned to the same versions so
 # there is no semconv/OTLP skew between them.
 
 opentelemetry-distro==0.62b1

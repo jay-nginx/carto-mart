@@ -838,6 +838,8 @@ spec:
               valueFrom: { configMapKeyRef: { name: carto-config, key: JOY_URL } }
             - name: GUARDRAILS_URL
               valueFrom: { configMapKeyRef: { name: carto-config, key: GUARDRAILS_URL } }
+            - name: NODE_OPTIONS
+              value: -r dd-trace/init
           readinessProbe:
             httpGet: { path: /healthz, port: 8080 }
             initialDelaySeconds: 10

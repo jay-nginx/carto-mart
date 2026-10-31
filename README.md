@@ -42,6 +42,7 @@ Docker), **local Kubernetes** (kind), and **GKE**.
 - [Demo scenarios](#demo-scenarios)
 - [Datadog assets](#datadog-assets)
 - [Troubleshooting](#troubleshooting)
+- [What this costs on GKE](#what-this-costs-on-gke)
 - [Teardown](#teardown)
 
 ---
@@ -156,6 +157,42 @@ $EDITOR carto.env
 
 `carto.env` is gitignored. `carto.env.example` is tracked and contains no secrets.
 
+### The three values you must set
+
+Everything else has a working default. Open `carto.env` and fill in these three — the file is
+organised into numbered sections and each one sits under its own heading:
+
+```bash
+# --- section 1. DATADOG ---
+DD_API_KEY=<40-hex-char key>          # Organization Settings -> API Keys -> New Key
+DD_SITE=datadoghq.com                 # the host you log in to; see the warning below
+
+# --- section 2. ANTHROPIC ---
+ANTHROPIC_API_KEY=sk-ant-...          # console.anthropic.com -> API Keys
+```
+
+Two more are needed the moment you push Datadog assets or deploy to GKE:
+
+```bash
+# --- section 1. DATADOG ---
+DD_APP_KEY=<40-hex-char key>          # Personal Settings -> Application Keys
+ALERT_EMAIL=you@example.com           # where the presenter alert is sent
+
+# --- section 4. CLOUD (GKE only) ---
+GCP_PROJECT_ID=my-project
+GCP_REGION=australia-southeast1
+GKE_CLUSTER_NAME=carto-demo
+```
+
+Then check your work before starting anything:
+
+```bash
+./carto doctor      # validates the keys against DD_SITE and names what is missing
+```
+
+`doctor` calls Datadog's `/api/v1/validate` with your keys, so a wrong key or a wrong site is
+reported here rather than becoming silence in a dashboard an hour later.
+
 ### What goes where
 
 | Section | Variables | Where to get them | Needed for |
@@ -170,6 +207,16 @@ $EDITOR carto.env
 | | `AWS_*`, `AZURE_*` | Your cloud accounts | Only if you point the demo at EKS/AKS |
 | **5 Tagging** | `DD_ENV`, `DD_TEAM`, `HARNESS_OWNER` | Yours to choose | Always |
 | **6 Tuning** | Load rates, guardrail thresholds | Sensible defaults | Always |
+| | `GUARDRAIL_AGENT_TOKEN` | Yours to choose | The identity pillar — **see below** |
+| **7 Passwords** | `POSTGRES_PASSWORD`, `CARTO_DEMO_PASSWORD` | Yours to choose | Defaults work; change for anything shared |
+| | `DD_GIT_REPOSITORY_URL`, `DD_GIT_COMMIT_SHA` | Your fork | Source Code Integration (optional) |
+| **Other** | `WEB_URL` | The address you browse to | Datadog deep links — `:5175` Compose, `:8080` kind, the LB IP on GKE |
+| | `CONTAINER_CLI` | `docker` or `podman` | GKE builds on Podman |
+
+> **`GUARDRAIL_AGENT_TOKEN` has a public default.** It is the shared secret the agent presents to
+> prove its identity, and pillar 1 rejects any action whose token does not match. The default
+> (`carto-agent-attestation`) ships in this repo so the demo runs immediately — which means anyone
+> reading this knows it. Set your own before presenting identity as a real control.
 
 > **`DD_SITE` is the single most common setup mistake.** Set it wrong and data is accepted but
 > lands in an org you cannot see. `datadoghq.com` is US1; `datadoghq.eu` is EU1;
@@ -290,9 +337,11 @@ Two things worth knowing before you run it:
 - **On Podman, set `CONTAINER_CLI=podman`** in `carto.env`, or put `scripts/podman-shim` on your
   PATH. The script builds with `docker` by default and otherwise stops at `docker: command not
   found`.
-- **It bills while it exists, not while you demo.** Three `e2-standard-4` nodes plus a load
-  balancer is roughly US$10–15 a day in most regions. Tear it down when you are done — see
-  [Teardown](#teardown).
+- **`GKE_NODE_COUNT` is per zone.** The script creates a *regional* cluster, and a region has
+  three zones, so the total is `GKE_NODE_COUNT × 3`. gcloud's own default of 3 would build **nine**
+  nodes. This repo ships `GKE_NODE_COUNT=1` — three nodes, one per zone.
+- **It bills while it exists, not while you demo.** See
+  [What this costs on GKE](#what-this-costs-on-gke) before you leave one running.
 
 Find the storefront once the load balancer has an address:
 
@@ -563,6 +612,48 @@ alongside and remove `40-datadog-agent.yaml`.
 
 **kind pods are `Pending` or get OOM-killed.** The Podman machine is too small. See
 [Prerequisites](#prerequisites).
+
+---
+
+## What this costs on GKE
+
+The stack is small: **990m CPU and 2.3 GiB of memory requested in total**, which fits on a single
+`e2-standard-4`. What you pay is mostly a function of how many nodes you let GKE create.
+
+Prices below are `australia-southeast1` (Sydney), on demand, no committed-use or sustained-use
+discount, USD. Compute and disk rates come from third-party price trackers, not Google's own page —
+**check the [pricing calculator](https://cloud.google.com/products/calculator) for your region
+before relying on them.**
+
+| | Nodes | Compute | GKE fee | Disks | LB | **Per hour** | **Per day** | **Per month** |
+|---|---|---|---|---|---|---|---|---|
+| gcloud default (`--num-nodes 3`, regional) | 9 | $1.712 | $0.10 | $0.154 | $0.025 | **$1.99** | **$48** | **$1,453** |
+| This repo's default (`GKE_NODE_COUNT=1`, regional) | 3 | $0.571 | $0.10 | $0.051 | $0.025 | **$0.75** | **$18** | **$545** |
+| Zonal, single node (`--zone`, not `--region`) | 1 | $0.190 | $0.10 | $0.017 | $0.025 | **$0.33** | **$8** | **$241** |
+
+Components, so you can re-derive these for your own region:
+
+- **Compute** — `e2-standard-4` (4 vCPU, 16 GB) at **~$0.190/hr** in Sydney, ~$0.134/hr in
+  `us-central1`. Spot is ~$0.085–0.10/hr in Sydney and fine for a demo that can tolerate eviction.
+- **GKE management fee** — **$0.10 per cluster per hour**, flat, regardless of node count. Google
+  gives one Cloud Billing account a **$74.40/month credit**, which covers the fee for a single
+  *zonal* cluster; regional clusters do not consume it.
+- **Boot disks** — GKE attaches 100 GB `pd-balanced` per node by default, ~**$0.135/GB-month** in
+  Sydney, so ~$13.50 per node per month.
+- **Load balancer** — the GCE ingress creates a forwarding rule, ~$0.025/hr plus ~$0.01/GB of
+  processed traffic.
+- **Egress to Datadog** — small for this stack's volume, but not zero.
+
+Two costs that are not on your GCP bill:
+
+- **Datadog Infrastructure bills per host, and the Agent is a DaemonSet** — one Agent per node. Nine
+  nodes is nine billed hosts; three is three. This is usually the bigger surprise.
+- **Anthropic API** — Joy calls a real model. The defaults are deliberately cheap (Haiku, 180
+  max_tokens, a 25s driver interval ≈ 144 calls/hour); set `JOY_DRIVER_ENABLED=false` to stop the
+  background driver and leave only the in-app chat.
+
+Cheapest way to run it: a **zonal** single-node cluster, Spot nodes, and the load driver turned
+down. Most realistic for a demo: this repo's default of three nodes.
 
 ---
 

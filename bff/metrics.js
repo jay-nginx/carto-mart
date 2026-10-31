@@ -1,4 +1,4 @@
-// Mode-aware OpenTelemetry metrics for the portal BFF.
+// Mode-aware OpenTelemetry metrics for the Carto storefront BFF.
 //
 // WHY THIS EXISTS
 // ===============
@@ -36,7 +36,7 @@
 const { metrics } = require('@opentelemetry/api');
 
 const MODE = process.env.INSTRUMENTATION_MODE || 'agent';
-const SERVICE = process.env.DD_SERVICE || process.env.OTEL_SERVICE_NAME || 'carto-portal';
+const SERVICE = process.env.DD_SERVICE || process.env.OTEL_SERVICE_NAME || 'carto-storefront';
 const MAX_SAMPLES = 500;
 
 // name -> { name, type, unit, description, service, points: Map<tagKey, point> }

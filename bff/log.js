@@ -1,4 +1,4 @@
-// Mode-aware structured logging for the portal BFF.
+// Mode-aware structured logging for the Carto storefront BFF.
 //
 // WHY THIS EXISTS
 // ===============
@@ -52,7 +52,7 @@ function jlog(level, msg, extra = {}) {
     ts: new Date().toISOString(),
     level,
     msg,
-    'dd.service': process.env.DD_SERVICE || process.env.OTEL_SERVICE_NAME || 'portal',
+    'dd.service': process.env.DD_SERVICE || process.env.OTEL_SERVICE_NAME || 'carto-storefront',
     'dd.env': process.env.DD_ENV || 'dev',
     'dd.version': process.env.DD_VERSION || '0.1.0',
     // Which instrumentation stack produced this log. In the payload rather
@@ -87,7 +87,7 @@ function jlog(level, msg, extra = {}) {
 function recent(limit = 50) {
   const n = Math.max(1, Math.min(Number(limit) || 50, RING_SIZE));
   return {
-    service: process.env.DD_SERVICE || process.env.OTEL_SERVICE_NAME || 'carto-portal',
+    service: process.env.DD_SERVICE || process.env.OTEL_SERVICE_NAME || 'carto-storefront',
     instrumentation: MODE,
     signal: 'logs',
     transport: logTransport(),

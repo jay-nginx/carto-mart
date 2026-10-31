@@ -84,6 +84,16 @@ for s in SERVICES:
     for name, src, key in s.get("extra_env", []):
         ref = "secretKeyRef: { name: carto-secrets, key: %s }" % key
         env.append("            - name: %s\n              valueFrom: { %s }\n" % (name, ref))
+    # dd-trace-js is not auto-loaded by requiring it from main.js -- it must be
+    # preloaded before any instrumented module. compose.yaml does this with
+    # NODE_OPTIONS on the service block; Kubernetes had no equivalent, so the
+    # Node services produced NO traces at all on kind and GKE. The BFF is the
+    # request entry point and the minter of txn_id, so its absence broke the
+    # one-trace-per-request story exactly where it starts.
+    if s["lang"] == "nodejs":
+        env.append("            - name: NODE_OPTIONS\n"
+                   "              value: -r dd-trace/init\n")
+
     if s.get("llmobs"):
         env.append("            - name: DD_LLMOBS_ENABLED\n              value: \"true\"\n")
         env.append("            - name: DD_LLMOBS_ML_APP\n              value: carto-joy\n")

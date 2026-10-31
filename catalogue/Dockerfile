@@ -4,8 +4,8 @@
 # DELIBERATELY VULNERABLE BASE (SCA/CSM story): pinned to an EOL
 # Python 3.9 / Debian bullseye image. The agent's container-image SBOM
 # scanning (DD_SBOM_CONTAINER_IMAGE_ENABLED) surfaces the stale OS-package
-# CVEs + the EOL interpreter as vulnerabilities on carto-listings. This
-# is intentional — do NOT "fix" it back to slim/bookworm. The listings app
+# CVEs + the EOL interpreter as vulnerabilities on carto-catalogue. This
+# is intentional — do NOT "fix" it back to slim/bookworm. The catalogue service
 # runs fine on 3.9 (PEP 585 generics, pydantic v2, ddtrace all 3.9-compatible).
 #
 # Debian 11 is end-of-life. deb.debian.org still serves the

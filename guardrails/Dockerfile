@@ -1,7 +1,7 @@
 # Generic FastAPI + ddtrace runtime. The service supplies main.py and
 # requirements.txt; this Dockerfile installs and runs them.
 #
-# Unlike listings/Dockerfile (pinned to an EOL 3.9/bullseye base on purpose,
+# Unlike catalogue/Dockerfile (pinned to an EOL 3.9/bullseye base on purpose,
 # as the SBOM/CVE story), this service runs a current slim base — so the
 # Vulnerability Management view shows a MIX of clean and vulnerable services
 # rather than a uniformly red stack.
