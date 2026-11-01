@@ -40,6 +40,7 @@ Docker), **local Kubernetes** (kind), and **GKE**.
 - [Credentials in Kubernetes](#credentials-in-kubernetes)
 - [What is running](#what-is-running)
 - [AI guardrails: the six pillars](#ai-guardrails-the-six-pillars)
+- [Real User Monitoring (RUM)](#real-user-monitoring-rum)
 - [The two ID systems](#the-two-id-systems)
 - [Demo scenarios](#demo-scenarios)
 - [Datadog assets](#datadog-assets)
@@ -592,6 +593,127 @@ Traces are always ingested in full; the filter governs what stays searchable.
 Turning guardrails off (`GUARDRAIL_ENABLED=false`) lets you show the same action succeeding
 unguarded. Doing so logs `guardrail_decision:bypassed` and alerts at P1, because guardrails being
 off is itself an audit finding.
+
+---
+
+## Real User Monitoring (RUM)
+
+RUM is the browser half of this demo. Without it the story stops at the server: you can see that a
+checkout failed, but not the click that caused it, not what the shopper saw, and not which session
+belongs to the order number on a support call.
+
+### What it is wired to do here
+
+| Capability | Where | Why it matters in the demo |
+|---|---|---|
+| Session Replay, 100% sampled | `sessionReplaySampleRate: 100` | "Show me what the customer saw" |
+| `usr.id` = Carto customer id | `rumSetCustomer()` | `@usr.id:CT-CUST-1001` finds the shopper's sessions **and** their APM spans — the BFF stamps the same value |
+| `txn_id` / `order_id` as global context | `rumSetTxn()` | A support call that starts with an order number ends at a session replay |
+| RUM → APM trace join | `allowedTracingUrls` on `/api/` | A click and its backend trace are one object |
+| Manual views | `trackViewsManually: true` | **Mandatory** — `App.jsx` calls `startView()` itself; leaving the default double-counts every navigation |
+| Feature-flag evaluations | `rumFlags()` | Shows which cohort a session was in when it broke |
+| One session per window | `stopSession()` on `pagehide` | Walking the same journey three times gives three sessions, not one |
+
+Privacy is `defaultPrivacyLevel: 'mask-user-input'`, so typed input is masked in replays.
+
+### The one thing to understand
+
+**The RUM `applicationId` and `clientToken` are compiled into the JavaScript bundle at build
+time.** Vite inlines `VITE_DD_RUM_*` when the SPA is built; there is no runtime setting, no
+environment variable on the running container, and no ConfigMap that can switch RUM on afterwards.
+
+Everything below follows from that. The SPA checks:
+
+```js
+export const RUM_ENABLED = Boolean(env.VITE_DD_RUM_APPLICATION_ID && env.VITE_DD_RUM_CLIENT_TOKEN);
+```
+
+If the app id was empty at build time, `initRum()` returns immediately. **There is no error.** RUM
+is simply absent — which is exactly how it can look fine and send nothing.
+
+### Steps
+
+**1. Mint the RUM application.** Needs `DD_API_KEY` and `DD_APP_KEY` in `carto.env`.
+
+```bash
+./carto rum
+```
+
+It looks for a RUM application named `carto-web` on your `DD_SITE` and **reuses it if it exists**,
+so it is safe to re-run. It writes `docker-compose.override.yaml`:
+
+```yaml
+services:
+  web:
+    build:
+      args:
+        VITE_DD_RUM_APPLICATION_ID: "…"
+        VITE_DD_RUM_CLIENT_TOKEN: "…"
+```
+
+That file is gitignored — the ids are yours, not the repo's.
+
+**2. Build the storefront *after* step 1**, because the build is what inlines the values.
+
+| Path | Command | Note |
+|---|---|---|
+| Compose | `./carto up` | `./carto rum` rebuilds and recreates `web` itself, so either order works |
+| kind | `./scripts/kind-up.sh` | Must come **after** `./carto rum`. Already built? `./scripts/kind-up.sh --rebuild` |
+| GKE | `./scripts/gke-deploy.sh` | Must come **after**. It prints `✓ RUM app id found` or `! …WITHOUT RUM` before building |
+
+**3. Verify it is actually in the bundle** — the only check that proves anything:
+
+```bash
+# replace the origin with your own: :5175 Compose, :8080 kind, the LB IP on GKE
+B=$(curl -s http://localhost:8080/ | grep -oE '/assets/index-[A-Za-z0-9_-]+\.js' | head -1)
+curl -s "http://localhost:8080$B" | grep -c "$(grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' docker-compose.override.yaml | head -1)"
+```
+
+`1` means the id is compiled in. `0` means it is not, whatever the deploy said.
+
+**4. Confirm events arrive.** Load the storefront in a browser, click through a journey, then look
+in Datadog under **RUM → Sessions** for `service:carto-web`. From the terminal:
+
+```bash
+./scripts/creds-from-env.sh python3 - <<'EOF'
+import os, json, urllib.request
+req = urllib.request.Request(
+    "https://api.%s/api/v2/rum/events/search" % os.environ["DD_SITE"],
+    data=json.dumps({"filter": {"from": "now-15m", "to": "now",
+                                "query": "@service:carto-web"}}).encode(),
+    headers={"DD-API-KEY": os.environ["DD_API_KEY"],
+             "DD-APPLICATION-KEY": os.environ["DD_APP_KEY"],
+             "Content-Type": "application/json"})
+print(len(json.load(urllib.request.urlopen(req)).get("data", [])), "RUM events")
+EOF
+```
+
+### If the bundle is right but Datadog is empty
+
+Some corporate resolvers — DNSFilter among them — return NODATA for
+`browser-intake-datadoghq.com` while leaving `api.datadoghq.com` alone. The Agent then ships
+traces, logs and metrics perfectly and **the browser SDK goes completely dark with no error**,
+because it cannot resolve its own intake host.
+
+```bash
+getent hosts browser-intake-datadoghq.com      # NODATA / nothing = this is your problem
+```
+
+On **Compose** there is a workaround:
+
+```bash
+make rum-unblock      # resolves the intake over DNS-over-HTTPS, pins the addresses,
+                      # and switches the SDK to same-origin delivery via /dd-rum
+./carto up            # rebuild so VITE_DD_RUM_PROXY is inlined
+```
+
+It writes `docker-compose.rum-dns.yaml` with `extra_hosts` for the containers, plus an nginx
+snippet under `web/rum-proxy/` so a human browsing from the host is covered too. The addresses
+rotate — re-run it if RUM goes quiet.
+
+**There is no Kubernetes equivalent.** On such a network, RUM will not reach Datadog from kind or
+GKE. The real fix is a DNS allowlist entry for `*.browser-intake-<your DD_SITE>`; the proxy exists
+only because that is not always available quickly.
 
 ---
 
