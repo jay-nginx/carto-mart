@@ -2,7 +2,8 @@
 # carto — one-word control surface for the Carto demo harness. Thin wrapper over
 # the Makefile so a presenter never has to remember target names mid-demo.
 #
-#   ./carto up | stop | start | cycle | status | doctor | smoke | validate
+#   ./carto up | stop | start | cycle | status | smoke | validate
+#   ./carto doctor [--creds-only]   full health check, or just the keys
 #   ./carto down | ps | logs | rum | assets | reset
 #   ./carto break new-range | payment | peak | stall | errors | raj
 #   ./carto fix   new-range | payment | peak | stall | raj
@@ -37,7 +38,8 @@ WEB="${WEB:-${WEB_URL:-http://localhost:5175}}"
 usage() { sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; }
 
 case "${1:-help}" in
-  up|down|ps|logs|doctor|smoke|assets|build|restart|clean|nuke|validate) exec make "$1" ;;
+  doctor)  shift; exec ./scripts/doctor.sh "$@" ;;   # passes --creds-only through
+  up|down|ps|logs|smoke|assets|build|restart|clean|nuke|validate) exec make "$1" ;;
   stop|start|status) exec ./scripts/stack.sh "$1" ;;
   cycle)             exec ./scripts/stack.sh restart ;;
   rum)     exec make rum ;;

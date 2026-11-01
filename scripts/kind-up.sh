@@ -83,7 +83,19 @@ fi
 IMAGES=(catalogue checkout fulfilment guardrails joy bff web load)
 if [[ "${1:-}" == "--rebuild" ]] || ! podman image exists carto-bff 2>/dev/null; then
   info "building images with compose"
-  COMPOSE_FILE="compose.yaml:docker-compose.podman.yaml" \
+  # docker-compose.override.yaml carries the RUM applicationId and clientToken
+  # as Vite build args, which get inlined into the SPA bundle at build time.
+  # Leaving it out built a storefront with RUM_ENABLED false -- no RUM and no
+  # Session Replay on the cluster, silently, because the SPA just does not call
+  # datadogRum.init() when the app id is empty.
+  KCF="compose.yaml:docker-compose.podman.yaml"
+  if [[ -f docker-compose.override.yaml ]]; then
+    KCF="compose.yaml:docker-compose.override.yaml:docker-compose.podman.yaml"
+  else
+    warn "no docker-compose.override.yaml — the storefront will build WITHOUT RUM."
+    warn "run ./carto rum first if you want RUM and Session Replay on the cluster."
+  fi
+  COMPOSE_FILE="$KCF" \
     /usr/local/bin/docker-compose build "${IMAGES[@]}" >/dev/null
   ok "images built"
 fi

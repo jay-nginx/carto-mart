@@ -142,7 +142,7 @@ validate: prereqs ## Prove a triggered failure lands in RUM and a clean run does
 
 .PHONY: doctor
 doctor: ## End-to-end health: containers, endpoints, signals, ids
-	@./scripts/doctor.sh
+	@./scripts/doctor.sh $(DOCTOR_ARGS)
 
 .PHONY: smoke
 smoke: ## Drive one full transaction through the API and print its ledger

@@ -189,11 +189,16 @@ GKE_CLUSTER_NAME=carto-demo
 Then check your work before starting anything:
 
 ```bash
-./carto doctor      # validates the keys against DD_SITE and names what is missing
+./carto doctor --creds-only
 ```
 
-`doctor` calls Datadog's `/api/v1/validate` with your keys, so a wrong key or a wrong site is
-reported here rather than becoming silence in a dashboard an hour later.
+That calls Datadog's `/api/v1/validate` and Anthropic's `/v1/models` with your keys, so a wrong
+key or a wrong site is caught in two seconds rather than becoming silence in a dashboard an hour
+later. It stops after the credentials section and tells you the next command.
+
+Run the **full** `./carto doctor` only once something is up — its other seven sections check
+containers, endpoints and signals, so against a stopped stack it reports a wall of failures that
+say nothing about your setup.
 
 ### What goes where
 
@@ -242,11 +247,12 @@ those clouds. Prefer a role (`AWS_ROLE_ARN`) over static keys, and never commit 
 ## Quick start 1: Compose on Podman or Docker
 
 ```bash
-cp carto.env.example carto.env    # then fill in DD_API_KEY, DD_SITE, ANTHROPIC_API_KEY
-./carto up                        # build and start everything
-./carto rum                       # create the RUM app, rebuild the bundle
-./carto assets                    # push dashboards, monitors, SLOs, synthetics
-./carto doctor                    # 32 checks: is any of this actually working
+cp carto.env.example carto.env     # then fill in DD_API_KEY, DD_SITE, ANTHROPIC_API_KEY
+./carto doctor --creds-only        # 1. check the keys before an eight-image build
+./carto up                        # 2. build and start everything
+./carto rum                       # 3. mint the RUM app, rebuild the bundle
+./carto assets                    # 4. push dashboards, monitors, SLOs, synthetics
+./carto doctor                    # 5. full check: containers, endpoints, signals, ids
 ```
 
 Compose publishes every service on its own host port:
@@ -283,8 +289,16 @@ means something; `podman kube play` would ignore Deployments, Ingress and probes
 nothing.
 
 ```bash
-./scripts/kind-up.sh              # cluster, ingress-nginx, images, manifests, secrets
+./carto doctor --creds-only       # 1. check the keys first
+./carto rum                       # 2. BEFORE the build — see below
+./scripts/kind-up.sh              # 3. cluster, ingress-nginx, images, manifests, secrets
 ```
+
+> **Run `./carto rum` before `kind-up.sh`, not after.** The storefront inlines its RUM
+> `applicationId` and `clientToken` at *build* time, and `kind-up.sh` is what builds the image.
+> Provision afterwards and you get a cluster whose storefront has RUM switched off, with nothing
+> to tell you — the SPA simply does not call `datadogRum.init()` when the app id is empty. If you
+> have already built, re-run `./carto rum` then `./scripts/kind-up.sh --rebuild`.
 
 That script creates the cluster, installs ingress-nginx, **builds and side-loads the eight images**
 (kind cannot pull `carto-*` from anywhere), applies `k8s/overlays/kind`, and creates the Secret
@@ -318,10 +332,16 @@ Expect the image side-load to be the slow part — eight images through a tar pi
 
 ```bash
 # fill in GCP_PROJECT_ID, GCP_REGION, GKE_CLUSTER_NAME in carto.env first
-gcloud auth login
-./scripts/gke-deploy.sh --dry-run   # print the manifests, change nothing
-./scripts/gke-deploy.sh             # create cluster, build, push, deploy
+./carto doctor --creds-only         # 1. check the keys
+gcloud auth login                   # 2. GCP credentials come from gcloud, not carto.env
+./carto rum                         # 3. BEFORE the build — see below
+./scripts/gke-deploy.sh --dry-run   # 4. print the manifests, change nothing
+./scripts/gke-deploy.sh             # 5. create cluster, build, push, deploy
 ```
+
+> **`./carto rum` goes before the deploy, for the same reason as on kind** — the RUM app id is a
+> *build* arg, and `gke-deploy.sh` builds the images. The script tells you which way it went:
+> `✓ RUM app id found` or `! the storefront will build WITHOUT RUM`.
 
 The script enables the required APIs, creates the cluster if it is absent, creates an Artifact
 Registry repository, **builds `linux/amd64` images**, pushes them, applies `k8s/overlays/gke`, and
@@ -371,6 +391,8 @@ cluster-fee credit.
 #   GCP_ZONE=australia-southeast1-a      # must be a zone, not a region
 #   GKE_NODE_COUNT=1
 
+./carto doctor --creds-only         # check the keys
+./carto rum                         # before the build, as in Quick start 3
 ./scripts/gke-deploy.sh --dry-run   # confirm it says topology=zonal overlay=gke-single
 ./scripts/gke-deploy.sh
 ```
@@ -656,6 +678,17 @@ needs the volume recreated:
 On Kubernetes: `kubectl -n carto delete sts postgres && kubectl -n carto delete pvc -l app=postgres`.
 Since the evaluator's `/healthz` verifies its own tables, a missing migration shows up as an
 unready pod rather than as 500s in production.
+
+**Traces, logs and metrics arrive but RUM is empty.** Two different causes, in this order.
+First, check the storefront was built *with* an app id: `curl -s <storefront>/ | grep -o
+'/assets/index-[^"]*'` then grep that bundle for your RUM application id. If it is absent, RUM was
+never compiled in — run `./carto rum`, then rebuild (`./scripts/kind-up.sh --rebuild`, or re-run
+`gke-deploy.sh`). Second, if the id *is* in the bundle, check DNS: some corporate resolvers
+(DNSFilter among them) return NODATA for `browser-intake-datadoghq.com` while leaving
+`api.datadoghq.com` alone, so the Agent ships everything perfectly and the browser SDK goes dark
+with no error. Test it with `getent hosts browser-intake-datadoghq.com`. On Compose, `make
+rum-unblock` works around it with a same-origin proxy; **there is no Kubernetes equivalent yet**, so
+on such a network RUM will not reach Datadog from a cluster.
 
 **Pods stuck in `Init:0/1`.** They are waiting for Postgres, which is correct. Postgres runs three
 seed files on first start. `kubectl -n carto logs postgres-0`.

@@ -15,6 +15,19 @@ head() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 
 BFF=${BFF:-http://localhost:8091}
 
+# --creds-only stops after the credentials section. The other seven sections all
+# need a running stack, so a new user who runs the full doctor before `carto up`
+# sees sixteen failures and concludes their setup is broken, when in fact only
+# the first section said anything meaningful. Validating keys BEFORE an
+# eight-image build is worth two seconds.
+CREDS_ONLY=false
+for a in "$@"; do
+  case "$a" in
+    --creds-only|--creds) CREDS_ONLY=true ;;
+    *) printf 'usage: doctor.sh [--creds-only]\n' >&2; exit 2 ;;
+  esac
+done
+
 head "credentials"
 if [[ -f carto.env ]]; then
   set -a; . ./carto.env; set +a
@@ -25,8 +38,23 @@ if [[ -f carto.env ]]; then
     "https://api.${DD_SITE:-datadoghq.com}/api/v1/validate")
   [[ "$code" == "200" ]] && ok "keys validate against ${DD_SITE:-datadoghq.com}" \
                          || bad "key validation returned HTTP $code"
-  [[ -n "${ANTHROPIC_API_KEY:-}" ]] && ok "ANTHROPIC_API_KEY present (Joy + LLM Obs live)" \
-                                    || warn "ANTHROPIC_API_KEY empty — Joy runs degraded, no LLM Obs spans"
+  # Presence is not validity. A revoked or mistyped key is present, passes a
+  # -n test, and then fails on every Joy turn at runtime with nothing in this
+  # report to explain it. The Datadog keys are validated against the API here,
+  # so this one is too -- /v1/models is the cheapest authenticated GET.
+  if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
+    warn "ANTHROPIC_API_KEY empty — Joy runs degraded, no Agent Observability spans"
+  else
+    acode=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+      https://api.anthropic.com/v1/models \
+      -H "x-api-key: ${ANTHROPIC_API_KEY}" -H "anthropic-version: 2023-06-01" 2>/dev/null)
+    case "$acode" in
+      200) ok "ANTHROPIC_API_KEY validates (Joy + Agent Observability live)" ;;
+      401) bad "ANTHROPIC_API_KEY rejected (HTTP 401) — revoked or mistyped. Joy answers will fail" ;;
+      000) warn "could not reach api.anthropic.com to validate the key (network/proxy?)" ;;
+      *)   warn "ANTHROPIC_API_KEY check returned HTTP $acode — treat as unverified" ;;
+    esac
+  fi
 else
   bad "carto.env not found"
 fi
@@ -34,6 +62,17 @@ fi
 # Resolved after carto.env so WEB_URL can set it; 5175 is the Compose default,
 # 8080 the kind/GKE ingress. An explicit WEB in the environment still wins.
 WEB=${WEB:-${WEB_URL:-http://localhost:5175}}
+
+if [[ "$CREDS_ONLY" == true ]]; then
+  printf '\n\033[1m%d passed, %d failed, %d warnings\033[0m\n' "$PASS" "$FAIL" "$WARN"
+  if [[ "$FAIL" -eq 0 ]]; then
+    printf 'credentials look good — now run: ./carto up\n'
+  else
+    printf 'fix carto.env before building: the keys above are what every other check depends on\n'
+  fi
+  [[ "$FAIL" -eq 0 ]] || exit 1
+  exit 0
+fi
 
 head "containers"
 # STATUS ALONE IS NOT ENOUGH. A Node process that hits a fatal error while

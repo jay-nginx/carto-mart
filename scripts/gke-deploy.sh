@@ -146,10 +146,43 @@ if [[ "$DRY_RUN" == false ]]; then
     # --platform produces arm64 images that will CrashLoopBackOff with "exec
     # format error" — the single most common failure deploying this from a Mac.
     BUILDER="${CONTAINER_CLI:-docker}"
+
+    # The SPA inlines its RUM applicationId and clientToken at BUILD time, so
+    # they have to be build args -- there is no runtime config to set later.
+    # This builds each service with a plain `build`, not compose, so it does not
+    # pick up docker-compose.override.yaml the way the Compose and kind paths
+    # do. Without this block the storefront shipped to GKE had RUM_ENABLED
+    # false: no RUM, no Session Replay, and no error anywhere to say so.
+    #
+    # Prefer explicit carto.env values; otherwise read what ./carto rum wrote.
+    RUM_APP="${DD_RUM_APPLICATION_ID:-}"
+    RUM_TOK="${DD_RUM_CLIENT_TOKEN:-}"
+    if [[ -z "$RUM_APP" || -z "$RUM_TOK" ]] && [[ -f docker-compose.override.yaml ]]; then
+      RUM_APP="${RUM_APP:-$(sed -n 's/.*VITE_DD_RUM_APPLICATION_ID: *"\{0,1\}\([^"]*\)"\{0,1\} *$/\1/p' docker-compose.override.yaml | head -1)}"
+      RUM_TOK="${RUM_TOK:-$(sed -n 's/.*VITE_DD_RUM_CLIENT_TOKEN: *"\{0,1\}\([^"]*\)"\{0,1\} *$/\1/p' docker-compose.override.yaml | head -1)}"
+    fi
+    if [[ -n "$RUM_APP" && -n "$RUM_TOK" ]]; then
+      ok "RUM app id found — the storefront will ship with RUM + Session Replay"
+    else
+      warn "no RUM app id/token (carto.env or docker-compose.override.yaml)."
+      warn "the storefront will build WITHOUT RUM. Run ./carto rum first to mint one."
+    fi
+
     info "building and pushing linux/amd64 images with $BUILDER"
     for i in "${IMAGES[@]}"; do
       printf '    carto-%s\n' "$i"
-      "$BUILDER" build --platform linux/amd64 -t "${REGISTRY}/carto-${i}:${TAG}" "./${i}" >/dev/null
+      BUILD_ARGS=()
+      if [[ "$i" == "web" ]]; then
+        BUILD_ARGS=(
+          --build-arg "VITE_DD_RUM_APPLICATION_ID=$RUM_APP"
+          --build-arg "VITE_DD_RUM_CLIENT_TOKEN=$RUM_TOK"
+          --build-arg "VITE_DD_SITE=${DD_SITE}"
+          --build-arg "VITE_DD_ENV=${DD_ENV:-prd}"
+          --build-arg "VITE_DD_SERVICE=carto-web"
+        )
+      fi
+      "$BUILDER" build --platform linux/amd64 "${BUILD_ARGS[@]}" \
+        -t "${REGISTRY}/carto-${i}:${TAG}" "./${i}" >/dev/null
       "$BUILDER" push "${REGISTRY}/carto-${i}:${TAG}" >/dev/null
     done
     ok "images pushed to $REGISTRY"
