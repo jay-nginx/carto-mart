@@ -11,8 +11,17 @@
 #    ./scripts/gke-deploy.sh --skip-build    deploy only (images already pushed)
 #    ./scripts/gke-deploy.sh --dry-run       print the manifests, change nothing
 #
-#  It will NOT delete anything. Tear down explicitly:
+#  Topology comes from GKE_TOPOLOGY in carto.env:
+#    regional (default)  3 nodes minimum -- --num-nodes is PER ZONE and a region
+#                        has three. Uses k8s/overlays/gke.
+#    zonal               exactly GKE_NODE_COUNT nodes, default 1. Uses
+#                        k8s/overlays/gke-single, which collapses replicas to 1.
+#                        The cheapest real cluster; no zone redundancy.
+#
+#  It will NOT delete anything. Tear down explicitly, with the flag matching the
+#  topology you created:
 #    gcloud container clusters delete "$GKE_CLUSTER_NAME" --region "$GCP_REGION"
+#    gcloud container clusters delete "$GKE_CLUSTER_NAME" --zone   "$GCP_ZONE"
 # ===========================================================================
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -48,11 +57,40 @@ gcloud auth list --filter=status:ACTIVE --format='value(account)' | grep -q . \
 NS="${K8S_NAMESPACE:-carto}"
 REGION="$GCP_REGION"
 CLUSTER="$GKE_CLUSTER_NAME"
+
+# --- topology: regional (default) or zonal single-node --------------------
+# A REGIONAL cluster spreads nodes over the region's three zones and multiplies
+# --num-nodes by three, so its smallest form is three nodes. A ZONAL cluster
+# takes --num-nodes literally, so one means one. Everything downstream that
+# addresses the cluster has to use the matching flag, which is why this is
+# resolved once into LOC_FLAG rather than repeated.
+case "${GKE_TOPOLOGY:-regional}" in
+  zonal)
+    [[ -n "${GCP_ZONE:-}" ]] || die "GKE_TOPOLOGY=zonal needs GCP_ZONE in carto.env (e.g. ${REGION}-a)"
+    LOC_FLAG=(--zone "$GCP_ZONE")
+    LOC_DESC="zone=$GCP_ZONE"
+    NODES="${GKE_NODE_COUNT:-1}"
+    TOTAL_NODES="$NODES"
+    OVERLAY="gke-single"
+    ;;
+  regional)
+    LOC_FLAG=(--region "$REGION")
+    LOC_DESC="region=$REGION"
+    NODES="${GKE_NODE_COUNT:-1}"
+    TOTAL_NODES="$(( NODES * 3 ))"
+    OVERLAY="gke"
+    ;;
+  *) die "GKE_TOPOLOGY must be 'regional' or 'zonal', got '${GKE_TOPOLOGY}'" ;;
+esac
 TAG="${IMAGE_TAG:-latest}"
 # Default to Artifact Registry in the configured region/project.
 REGISTRY="${IMAGE_REGISTRY:-${REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/carto}"
 
-info "project=$GCP_PROJECT_ID region=$REGION cluster=$CLUSTER"
+info "project=$GCP_PROJECT_ID $LOC_DESC cluster=$CLUSTER"
+info "topology=${GKE_TOPOLOGY:-regional} overlay=$OVERLAY nodes=$TOTAL_NODES x ${GKE_MACHINE_TYPE:-e2-standard-4}"
+if [[ "${GKE_TOPOLOGY:-regional}" == "zonal" && "$TOTAL_NODES" -gt 1 ]]; then
+  warn "GKE_NODE_COUNT=$NODES on a zonal cluster: that is $TOTAL_NODES nodes, not a single-node deploy"
+fi
 info "registry=$REGISTRY tag=$TAG namespace=$NS"
 gcloud config set project "$GCP_PROJECT_ID" >/dev/null 2>&1
 
@@ -65,7 +103,7 @@ if [[ "$DRY_RUN" == false ]]; then
     --quiet >/dev/null 2>&1 || warn "could not enable APIs; continuing in case they already are"
 
   # --- cluster ----------------------------------------------------------
-  if ! gcloud container clusters describe "$CLUSTER" --region "$REGION" >/dev/null 2>&1; then
+  if ! gcloud container clusters describe "$CLUSTER" "${LOC_FLAG[@]}" >/dev/null 2>&1; then
     info "creating GKE cluster '$CLUSTER' (several minutes)"
     if [[ "${GKE_MODE:-standard}" == "autopilot" ]]; then
       # Autopilot refuses the host mounts and hostPID the Agent DaemonSet
@@ -74,11 +112,11 @@ if [[ "$DRY_RUN" == false ]]; then
       warn "GKE_MODE=autopilot: the Datadog Agent DaemonSet needs hostPID and host"
       warn "mounts that Autopilot blocks. Use Standard, or switch to the Datadog"
       warn "Operator/Helm chart which has an Autopilot-compatible mode."
-      gcloud container clusters create-auto "$CLUSTER" --region "$REGION" --quiet
+      gcloud container clusters create-auto "$CLUSTER" "${LOC_FLAG[@]}" --quiet
     else
       gcloud container clusters create "$CLUSTER" \
-        --region "$REGION" \
-        --num-nodes "${GKE_NODE_COUNT:-3}" \
+        "${LOC_FLAG[@]}" \
+        --num-nodes "$NODES" \
         --machine-type "${GKE_MACHINE_TYPE:-e2-standard-4}" \
         --enable-ip-alias \
         --workload-pool="${GCP_PROJECT_ID}.svc.id.goog" \
@@ -91,7 +129,7 @@ if [[ "$DRY_RUN" == false ]]; then
   fi
 
   info "fetching cluster credentials"
-  gcloud container clusters get-credentials "$CLUSTER" --region "$REGION" --quiet
+  gcloud container clusters get-credentials "$CLUSTER" "${LOC_FLAG[@]}" --quiet
   ok "kubectl context: $(kubectl config current-context)"
 
   # --- images -----------------------------------------------------------
@@ -124,6 +162,10 @@ fi
 # Point the overlay at the real registry without editing a tracked file.
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 cp -R k8s "$TMP/k8s"
+# The images: block lives in the gke overlay, and gke-single inherits it, so
+# the rewrite targets gke even when deploying gke-single. Pointing this at
+# $OVERLAY would write an images: block into gke-single that overrides
+# nothing, and the real one would stay on the bare carto-* names.
 ( cd "$TMP/k8s/overlays/gke"
   for i in "${IMAGES[@]}"; do
     kubectl kustomize --help >/dev/null 2>&1
@@ -139,12 +181,12 @@ PY
   done )
 
 if [[ "$DRY_RUN" == true ]]; then
-  kubectl kustomize "$TMP/k8s/overlays/gke"
+  kubectl kustomize "$TMP/k8s/overlays/$OVERLAY"
   exit 0
 fi
 
 info "applying manifests"
-kubectl apply -k "$TMP/k8s/overlays/gke" >/dev/null
+kubectl apply -k "$TMP/k8s/overlays/$OVERLAY" >/dev/null
 ok "manifests applied"
 
 info "creating secrets from carto.env"

@@ -1,0 +1,37 @@
+# Single-node GKE: the cheapest way to stand this up in a real cluster.
+#
+# Inherits the full GKE overlay -- the gce ingress class, the BackendConfig,
+# DD_ENV=prd and DD_KUBELET_TLS_VERIFY=true all come from ../gke, so this file
+# only changes what a one-node cluster makes pointless.
+#
+# WHAT MAKES IT SINGLE-NODE IS THE CLUSTER, NOT THIS FILE.
+# gke-deploy.sh must create a ZONAL cluster (--zone, --num-nodes 1). A regional
+# cluster multiplies --num-nodes by the region's three zones, so the smallest
+# regional cluster is three nodes. Set GKE_TOPOLOGY=zonal in carto.env, which is
+# what selects this overlay.
+#
+# Replicas drop to 1 across the board. Two replicas pinned to the same node
+# survive no failure a single replica would not -- they only double the
+# footprint. With these counts the stack is 10 pods requesting ~1.06 vCPU and
+# ~2.4 GiB, which sits comfortably inside one e2-standard-4 (4 vCPU / 16 GB,
+# about 3.9 vCPU allocatable) alongside GKE's own system pods.
+#
+# Do not shrink the machine type further. e2-standard-2 leaves roughly 2 vCPU
+# for ~1.06 vCPU of app requests plus ~0.6 vCPU of GKE system pods: it schedules
+# with almost no headroom, and the Puppeteer load driver is bursty.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: carto
+
+resources:
+  - ../gke
+
+replicas:
+  - { name: bff,        count: 1 }
+  - { name: catalogue,  count: 1 }
+  - { name: checkout,   count: 1 }
+  - { name: fulfilment, count: 1 }
+  - { name: guardrails, count: 1 }
+  - { name: joy,        count: 1 }
+  - { name: web,        count: 1 }
+  - { name: load,       count: 1 }
